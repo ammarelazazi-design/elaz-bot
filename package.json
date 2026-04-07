@@ -1,15 +1,15 @@
 {
   "name": "elaz-bot",
   "version": "1.0.0",
-  "description": "Messenger Bot with Gemini API",
+  "description": "Messenger Bot for ELAZ using Gemini AI",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "body-parser": "^1.20.1",
-    "node-fetch": "^2.6.9",
+    "body-parser": "^1.20.2",
+    "axios": "^1.6.0",
     "@google/generative-ai": "^0.1.0"
   }
 }
