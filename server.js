@@ -36,7 +36,7 @@ app.post('/webhook', async (req, res) => {
                 const userMessage = webhook_event.message.text;
 
                 try {
-                    // نداء مباشر لـ Google API بدون استخدام مكتبة GoogleGenerativeAI
+                    // التعديل هنا: استخدام مسار v1beta مع الموديل المباشر
                     const geminiResponse = await axios.post(
                         `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
                         {
@@ -46,14 +46,19 @@ app.post('/webhook', async (req, res) => {
                         }
                     );
 
-                    const aiResponse = geminiResponse.data.candidates?.[0]?.content?.parts?.[0]?.text 
-                                     || "عذراً، لم أستطع معالجة الرد حالياً.";
+                    // التأكد من وجود بيانات في الرد قبل محاولة قراءتها
+                    if (geminiResponse.data.candidates && geminiResponse.data.candidates[0].content) {
+                        const aiResponse = geminiResponse.data.candidates[0].content.parts[0].text;
+                        await callSendAPI(sender_psid, aiResponse);
+                    } else {
+                        await callSendAPI(sender_psid, "عذراً، المحرك لم يعطي رداً واضحاً.");
+                    }
 
-                    await callSendAPI(sender_psid, aiResponse);
                 } catch (error) {
-                    console.error("Gemini Direct Error:", error.response?.data || error.message);
-                    let errorMsg = error.response?.data ? JSON.stringify(error.response.data) : error.message;
-                    await callSendAPI(sender_psid, "عطل في المحرك: " + errorMsg.slice(0, 150));
+                    console.error("Gemini Error:", error.response?.data || error.message);
+                    // لو فشل تاني، هيبعتلك كود الخطأ عشان نصلحه فوراً
+                    let errData = error.response?.data ? JSON.stringify(error.response.data) : error.message;
+                    await callSendAPI(sender_psid, "خطأ جديد: " + errData.slice(0, 150));
                 }
             }
         }
