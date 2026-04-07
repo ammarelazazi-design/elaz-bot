@@ -91,7 +91,7 @@ app.post("/webhook", async (req, res) => {
 
 // الدالة دي اللي كان فيها الخطأ وصلحتها تماماً
 function sendToFB(recipientId, text) {
-    const url = https://graph.facebook.com/v20.0/me/messages?access_token=${PAGE_ACCESS_TOKEN};
+    const url = "https://graph.facebook.com/v20.0/me/messages?access_token=" + PAGE_ACCESS_TOKEN;
     fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
