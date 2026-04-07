@@ -29,29 +29,34 @@ app.post('/webhook', async (req, res) => {
             if (webhook_event.message && webhook_event.message.text) {
                 const userMessage = webhook_event.message.text;
 
-                // مصفوفة الروابط "المضمونة" - هيجربهم بالترتيب
+                // هنختصرهم في أهم رابطين عشان السرعة
                 const urls = [
                     `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-                    `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`
+                    `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`
                 ];
 
                 let finalResponse = "";
+                let lastError = "";
 
                 for (let url of urls) {
                     try {
                         const response = await axios.post(url, {
                             contents: [{ parts: [{ text: userMessage }] }]
-                        }, { timeout: 4000 });
+                        }, { timeout: 7000 });
 
                         if (response.data.candidates?.[0]?.content?.parts?.[0]?.text) {
                             finalResponse = response.data.candidates[0].content.parts[0].text;
-                            break; // أول ما يشتغل اخرج
+                            break; 
                         }
-                    } catch (e) { continue; }
+                    } catch (e) {
+                        // بيحفظ آخر خطأ حصل عشان يقولك عليه
+                        lastError = e.response?.data?.error?.message || e.message;
+                        console.error("Attempt failed:", lastError);
+                    }
                 }
 
-                await callSendAPI(sender_psid, finalResponse || "المعذرة، واجهت مشكلة مؤقتة في الاتصال.");
+                // لو مفيش رد، هيبعتلك السبب الحقيقي بدل "مشكلة في الاتصال"
+                await callSendAPI(sender_psid, finalResponse || `خطأ محدد: ${lastError}`);
             }
         }
         res.status(200).send('EVENT_RECEIVED');
@@ -68,4 +73,4 @@ async function callSendAPI(sender_psid, responseText) {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Final version live! 🚀`));
+app.listen(PORT, () => console.log(`Debug Mode Live! 🚀`));
