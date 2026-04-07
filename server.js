@@ -38,7 +38,7 @@ app.post('/webhook', async (req, res) => {
 
                 try {
                     // استخدام موديل 1.5 flash مباشرة
-                    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+                    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
                     const result = await model.generateContent(userMessage);
                     const response = await result.response;
                     const aiResponse = response.text();
