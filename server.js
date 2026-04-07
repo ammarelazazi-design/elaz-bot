@@ -1,18 +1,12 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express().use(bodyParser.json());
 
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-
-// تهيئة الجمناي بإصدار متوافق مع المكتبة 0.11.0
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-// استخدم gemini-1.5-flash كاسم أساسي بدون أرقام فرعية معقدة
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 app.get('/webhook', (req, res) => {
     let mode = req.query['hub.mode'];
@@ -42,16 +36,24 @@ app.post('/webhook', async (req, res) => {
                 const userMessage = webhook_event.message.text;
 
                 try {
-                    // طلب المحتوى من الجمناي
-                    const result = await model.generateContent(userMessage);
-                    const response = await result.response;
-                    const aiResponse = response.text();
+                    // نداء مباشر لـ Google API بدون استخدام مكتبة GoogleGenerativeAI
+                    const geminiResponse = await axios.post(
+                        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+                        {
+                            contents: [{
+                                parts: [{ text: userMessage }]
+                            }]
+                        }
+                    );
+
+                    const aiResponse = geminiResponse.data.candidates?.[0]?.content?.parts?.[0]?.text 
+                                     || "عذراً، لم أستطع معالجة الرد حالياً.";
 
                     await callSendAPI(sender_psid, aiResponse);
                 } catch (error) {
-                    console.error("Gemini Error:", error);
-                    // هيرد عليك بالخطأ لو حصل عشان نعرف لو فيه مشكلة في الـ API Key
-                    await callSendAPI(sender_psid, "عطل فني: " + (error.message ? error.message.slice(0, 100) : "حاول مجدداً"));
+                    console.error("Gemini Direct Error:", error.response?.data || error.message);
+                    let errorMsg = error.response?.data ? JSON.stringify(error.response.data) : error.message;
+                    await callSendAPI(sender_psid, "عطل في المحرك: " + errorMsg.slice(0, 150));
                 }
             }
         }
