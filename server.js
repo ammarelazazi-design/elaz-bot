@@ -45,23 +45,22 @@ app.post('/webhook', async (req, res) => {
 
                     await callSendAPI(sender_psid, aiResponse);
                 } catch (error) {
-                    console.error("DETAILED ERROR:", error);
-                    // هيرد عليك بالخطأ الحقيقي لو فشل عشان نعرف السبب
-                    await callSendAPI(sender_psid, "عطل فني: " + (error.message || "حاول مرة أخرى"));
-                }
-            }
-        });
-        res.status(200).send('EVENT_RECEIVED');
-    } else {
-        res.sendStatus(404);
-    }
-});
+                    // بدل الجزء القديم بتاع Gemini
+try {
+    const response = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+            contents: [{ parts: [{ text: userMessage }] }]
+        }
+    );
 
-async function callSendAPI(sender_psid, responseText) {
-    let request_body = {
-        "recipient": { "id": sender_psid },
-        "message": { "text": responseText }
-    };
+    const aiResponse = response.data.candidates[0].content.parts[0].text;
+    await callSendAPI(sender_psid, aiResponse);
+} catch (error) {
+    console.error("Gemini Direct Error:", error.response ? error.response.data : error.message);
+    await callSendAPI(sender_psid, "عذراً، فيه مشكلة في الربط المباشر.");
+}
+                   
 
     try {
         await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, request_body);
