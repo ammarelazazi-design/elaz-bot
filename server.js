@@ -29,23 +29,29 @@ app.post('/webhook', async (req, res) => {
             if (webhook_event.message && webhook_event.message.text) {
                 const userMessage = webhook_event.message.text;
 
-                try {
-                    // نداء مباشر للنسخة المستقرة v1 - موديل gemini-pro
-                    const response = await axios.post(
-                        `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
-                        {
-                            contents: [{ parts: [{ text: userMessage }] }]
-                        }
-                    );
+                // مصفوفة الروابط "المضمونة" - هيجربهم بالترتيب
+                const urls = [
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+                    `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`
+                ];
 
-                    const aiResponse = response.data.candidates?.[0]?.content?.parts?.[0]?.text || "رد سريع: أهلاً بك!";
-                    await callSendAPI(sender_psid, aiResponse);
-                } catch (error) {
-                    console.error("Final Error:", error.response?.data || error.message);
-                    // لو حصل أي حاجة، هيرد عليك بالسبب عشان تقفل اللابتوب وأنت عارف المشكلة فين
-                    const msg = error.response?.data?.error?.message || "خطأ في المفتاح أو الخدمة";
-                    await callSendAPI(sender_psid, "تنبيه: " + msg);
+                let finalResponse = "";
+
+                for (let url of urls) {
+                    try {
+                        const response = await axios.post(url, {
+                            contents: [{ parts: [{ text: userMessage }] }]
+                        }, { timeout: 4000 });
+
+                        if (response.data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                            finalResponse = response.data.candidates[0].content.parts[0].text;
+                            break; // أول ما يشتغل اخرج
+                        }
+                    } catch (e) { continue; }
                 }
+
+                await callSendAPI(sender_psid, finalResponse || "المعذرة، واجهت مشكلة مؤقتة في الاتصال.");
             }
         }
         res.status(200).send('EVENT_RECEIVED');
@@ -58,8 +64,8 @@ async function callSendAPI(sender_psid, responseText) {
             recipient: { id: sender_psid },
             message: { text: responseText }
         });
-    } catch (err) { console.error("FB ERROR"); }
+    } catch (err) { console.error("FB Error"); }
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Stable version live! 🚀`));
+app.listen(PORT, () => console.log(`Final version live! 🚀`));
