@@ -1,80 +1,51 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const axios = require('axios');
-
-const app = express().use(bodyParser.json());
-
-const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-
-app.get('/webhook', (req, res) => {
-    let mode = req.query['hub.mode'];
-    let token = req.query['hub.verify_token'];
-    let challenge = req.query['hub.challenge'];
-
-    if (mode && token) {
-        if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-            res.status(200).send(challenge);
-        } else {
-            res.sendStatus(403);
-        }
-    }
-});
-
-app.post('/webhook', async (req, res) => {
+App.post('/webhook', async (req, res) => {
     let body = req.body;
 
     if (body.object === 'page') {
-        body.entry.forEach(async (entry) => {
-            if (entry.messaging && entry.messaging[0]) {
-                let webhook_event = entry.messaging[0];
-                let sender_psid = webhook_event.sender.id;
+        for (const entry of body.entry) {
+            const webhook_event = entry.messaging?.[0];
+            if (!webhook_event) continue;
 
-                if (webhook_event.message && webhook_event.message.text) {
-                    let userMessage = webhook_event.message.text;
+            const sender_psid = webhook_event.sender.id;
 
-                    try {
-                        // الرابط ده متعدل ليكون دقيق 100% (v1beta مع مسار models الكامل)
-                        const response = await axios.post(
-                            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-                            {
-                                contents: [{ parts: [{ text: userMessage }] }]
-                            }
-                        );
+            // منع الـ echo
+            if (webhook_event.message?.is_echo) continue;
 
-                        if (response.data.candidates && response.data.candidates[0].content) {
-                            const aiResponse = response.data.candidates[0].content.parts[0].text;
-                            await callSendAPI(sender_psid, aiResponse);
-                        } else {
-                            throw new Error("Empty response from Gemini");
+            if (webhook_event.message && webhook_event.message.text) {
+                const userMessage = webhook_event.message.text;
+
+                try {
+                    const model = "gemini-2.0-flash";   // غيّر هنا لو عايز model تاني
+
+                    const geminiResponse = await axios.post(
+                        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+                        {
+                            contents: [{
+                                role: "user",
+                                parts: [{ text: userMessage }]
+                            }]
                         }
-                    } catch (error) {
-                        console.error("Gemini Error:", error.response ? error.response.data : error.message);
-                        let errorDetail = error.response ? JSON.stringify(error.response.data) : error.message;
-                        await callSendAPI(sender_psid, "عطل في المحرك: " + errorDetail);
-                    }
+                    );
+
+                    const candidate = geminiResponse.data.candidates?.[0];
+                    const aiResponse = candidate?.content?.parts?.[0]?.text 
+                        || "عفواً، مش قادر أرد دلوقتي.";
+
+                    await callSendAPI(sender_psid, aiResponse);
+
+                } catch (error) {
+                    console.error("Gemini Error:", error.response?.data || error.message);
+                    const errorMsg = error.response?.data ? 
+                        JSON.stringify(error.response.data).slice(0, 200) : 
+                        error.message;
+
+                    await callSendAPI(sender_psid, `عطل في الـ AI: ${errorMsg}`);
                 }
             }
-        });
+        }
+
         res.status(200).send('EVENT_RECEIVED');
     } else {
         res.sendStatus(404);
     }
 });
-
-async function callSendAPI(sender_psid, responseText) {
-    let request_body = {
-        "recipient": { "id": sender_psid },
-        "message": { "text": responseText }
-    };
-
-    try {
-        await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, request_body);
-    } catch (err) {
-        console.error("FB SEND ERROR:", err.response ? err.response.data : err.message);
-    }
-}
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server is live on port ${PORT} 🚀`));
