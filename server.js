@@ -8,7 +8,6 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// التحقق من الـ Webhook لفيسبوك
 app.get('/webhook', (req, res) => {
     let mode = req.query['hub.mode'];
     let token = req.query['hub.verify_token'];
@@ -36,19 +35,22 @@ app.post('/webhook', async (req, res) => {
                     let userMessage = webhook_event.message.text;
 
                     try {
-                        // استخدام الرابط المستقر v1 مع موديل gemini-pro
+                        // الرابط ده متعدل ليكون دقيق 100% (v1beta مع مسار models الكامل)
                         const response = await axios.post(
-                            `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
+                            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
                             {
                                 contents: [{ parts: [{ text: userMessage }] }]
                             }
                         );
 
-                        const aiResponse = response.data.candidates[0].content.parts[0].text;
-                        await callSendAPI(sender_psid, aiResponse);
+                        if (response.data.candidates && response.data.candidates[0].content) {
+                            const aiResponse = response.data.candidates[0].content.parts[0].text;
+                            await callSendAPI(sender_psid, aiResponse);
+                        } else {
+                            throw new Error("Empty response from Gemini");
+                        }
                     } catch (error) {
                         console.error("Gemini Error:", error.response ? error.response.data : error.message);
-                        // لو فشل تاني هيقولك السبب بالظبط عشان نتحرك صح
                         let errorDetail = error.response ? JSON.stringify(error.response.data) : error.message;
                         await callSendAPI(sender_psid, "عطل في المحرك: " + errorDetail);
                     }
