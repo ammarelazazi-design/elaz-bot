@@ -29,30 +29,23 @@ app.post('/webhook', async (req, res) => {
             if (webhook_event.message && webhook_event.message.text) {
                 const userMessage = webhook_event.message.text;
 
-                // --- مصفوفة الروابط (عشان لو واحد فشل التاني يلحقه فوراً) ---
-                const endpoints = [
-                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`,
-                    `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`
-                ];
-
-                let aiResponse = "عذراً، المحرك مشغول حالياً.";
-                
-                for (let url of endpoints) {
-                    try {
-                        const response = await axios.post(url, {
+                try {
+                    // نداء مباشر للنسخة المستقرة v1 - موديل gemini-pro
+                    const response = await axios.post(
+                        `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
+                        {
                             contents: [{ parts: [{ text: userMessage }] }]
-                        }, { timeout: 5000 });
-
-                        if (response.data.candidates?.[0]?.content?.parts?.[0]?.text) {
-                            aiResponse = response.data.candidates[0].content.parts[0].text;
-                            break; // لو اشتغل اخرج من اللوب فوراً
                         }
-                    } catch (e) {
-                        console.log(`Failed endpoint: ${url}`);
-                        continue; // جرب الرابط اللي بعده
-                    }
+                    );
+
+                    const aiResponse = response.data.candidates?.[0]?.content?.parts?.[0]?.text || "رد سريع: أهلاً بك!";
+                    await callSendAPI(sender_psid, aiResponse);
+                } catch (error) {
+                    console.error("Final Error:", error.response?.data || error.message);
+                    // لو حصل أي حاجة، هيرد عليك بالسبب عشان تقفل اللابتوب وأنت عارف المشكلة فين
+                    const msg = error.response?.data?.error?.message || "خطأ في المفتاح أو الخدمة";
+                    await callSendAPI(sender_psid, "تنبيه: " + msg);
                 }
-                await callSendAPI(sender_psid, aiResponse);
             }
         }
         res.status(200).send('EVENT_RECEIVED');
@@ -69,4 +62,4 @@ async function callSendAPI(sender_psid, responseText) {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Live! 🚀`));
+app.listen(PORT, () => console.log(`Stable version live! 🚀`));
