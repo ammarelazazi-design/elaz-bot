@@ -10,46 +10,54 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
-// ذاكرة مؤقتة للمحادثات (Context Memory)
+// 1. ذاكرة مؤقتة للمحادثات (عشان يفتكر الكلام اللي فات)
 const chatHistory = {};
 
-// تحميل الخدمات
+// 2. تحميل الخدمات من products.json
 let products = {};
 const productsPath = path.join(__dirname, "products.json");
 if (fs.existsSync(productsPath)) {
-    products = JSON.parse(fs.readFileSync(productsPath, "utf8"));
+    try {
+        products = JSON.parse(fs.readFileSync(productsPath, "utf8"));
+        console.log("✅ Services loaded");
+    } catch (e) { console.error("❌ Error loading products"); }
 }
 
-// دالة الذكاء الاصطناعي (Groq)
+// 3. دالة الذكاء الاصطناعي (Groq - Llama 3.3 70B)
 async function askAI(sender_psid, userMessage) {
     try {
-        // إدارة الذاكرة: حفظ آخر 3 رسائل فقط لكل مستخدم
+        // إدارة الذاكرة (آخر 3 رسائل)
         if (!chatHistory[sender_psid]) chatHistory[sender_psid] = [];
         const history = chatHistory[sender_psid].map(msg => `${msg.role}: ${msg.content}`).join("\n");
 
-        const prompt = `أنت موظف مبيعات في وكالة ELAZ. 
-        الخدمات: ${JSON.stringify(products)}
-        تاريخ المحادثة الأخير:
+        const prompt = `أنت موظف مبيعات محترف وحصري لوكالة ELAZ لخدمات الديجيتال.
+        الخدمات المتاحة: ${JSON.stringify(products)}
+        سياق المحادثة السابقة:
         ${history}
 
-        القواعد:
-        1. رد بلهجة مصرية عامية "زتونة" ومختصرة جداً.
-        2. لو العميل سأل "بكام" أو "تفاصيل" افهم هو كان بيتكلم عن أنهي خدمة من المحادثة السابقة.
-        3. لو العميل طلب يكلم حد أو يطلب أوردر، قوله يكلم "عمار" على واتساب: [حط رقمك هنا].
-        4. ممنوع الرغي الكتير أو الرموز الغريبة.
+        القواعد الصارمة:
+        1. **نطاق العمل فقط**: رد فقط في إطار خدمات الوكالة (ديزاين، إعلانات، أتمتة، برمجة).
+        2. **ممنوع الدردشة الجانبية**: لو سألك عن أي حاجة بره الشغل، رد بـ: "بعتذر منك، تخصصي هو المساعدة في خدمات وكالة ELAZ فقط. تحب أساعدك في أي خدمة تانية؟"
+        3. **تعدد اللغات**: رد بنفس لغة العميل (عربي، إنجليزي، أو غيره).
+        4. **اللهجة المصرية**: لو العميل اتكلم عربي، رد بلهجة مصرية عامية "زتونة" ومختصرة جداً.
+        5. **الذكاء الإملائي**: افهم الكلمات الغلط (عسان يقصد عشان، لوحو يقصد لوجو) وتجاوزها بذكاء.
+        6. **التحويل للواتساب**: لو العميل طلب أوردر أو رقم للتواصل، وجهه لواتساب عمار: [اكتب رقمك هنا].
 
         رسالة العميل الحالية: ${userMessage}`;
 
         const response = await axios.post("https://api.groq.com/openai/v1/chat/completions", {
             model: "llama-3.3-70b-versatile",
             messages: [{ role: "user", content: prompt }],
-            temperature: 0.5
+            temperature: 0.3 // تقليل الرقم ده بيخلي البوت جاد وملتزم بنطاق العمل
         }, {
-            headers: { "Authorization": `Bearer ${GROQ_API_KEY}` },
+            headers: { 
+                "Authorization": `Bearer ${GROQ_API_KEY}`,
+                "Content-Type": "application/json"
+            },
             timeout: 10000
         });
 
-        const aiResponse = response.data.choices[0]?.message?.content;
+        const aiResponse = response.data.choices[0]?.message?.content || "أهلاً بيك! محتاج مساعدة في خدماتنا؟";
         
         // تحديث الذاكرة
         chatHistory[sender_psid].push({ role: "user", content: userMessage });
@@ -58,12 +66,12 @@ async function askAI(sender_psid, userMessage) {
 
         return aiResponse;
     } catch (error) {
-        console.error("AI Error");
-        return "أهلاً بيك في ELAZ، محتاج مساعدة في تصميم أو إعلانات؟";
+        console.error("❌ AI Error:", error.response?.data || error.message);
+        return "أهلاً بك في ELAZ 👋، كيف يمكننا مساعدتك في خدماتنا اليوم؟";
     }
 }
 
-// دالة إرسال الرسالة مع أزرار (Quick Replies)
+// 4. دالة إرسال الرسالة مع أزرار الرد السريع (Quick Replies)
 async function callSendAPI(sender_psid, text) {
     const messageData = {
         recipient: { id: sender_psid },
@@ -79,15 +87,19 @@ async function callSendAPI(sender_psid, text) {
     };
     try {
         await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, messageData);
-    } catch (err) { console.error("FB SEND ERROR"); }
+    } catch (err) { console.error("❌ FB SEND ERROR"); }
 }
 
-// Webhook
+// 5. Webhook Verification
 app.get('/webhook', (req, res) => {
-    if (req.query['hub.verify_token'] === VERIFY_TOKEN) res.status(200).send(req.query['hub.challenge']);
-    else res.sendStatus(403);
+    if (req.query['hub.verify_token'] === VERIFY_TOKEN) {
+        res.status(200).send(req.query['hub.challenge']);
+    } else {
+        res.sendStatus(403);
+    }
 });
 
+// 6. استقبال ومعالجة الرسائل
 app.post('/webhook', async (req, res) => {
     const body = req.body;
     if (body.object === 'page') {
@@ -102,4 +114,5 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-app.listen(process.env.PORT || 3000, () => console.log("🚀 ELAZ Ultimate Bot is Live!"));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("🚀 ELAZ Ultimate Bot is Live and Protected!"));
