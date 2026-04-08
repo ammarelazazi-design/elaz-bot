@@ -27,7 +27,7 @@ function loadProducts() {
 }
 loadProducts();
 
-// 2. الرد الاحتياطي (Fallback)
+// 2. الرد الاحتياطي (Fallback) - هيظهر فقط لو الـ API مفصل
 function fallbackReply() {
   return `أهلاً بك في وكالة ELAZ 👋
 نعتذر عن التأخير، إليك خدماتنا:
@@ -38,28 +38,29 @@ function fallbackReply() {
 قولنا محتاج إيه وهنتواصل معاك فوراً!`;
 }
 
-// 3. دالة الذكاء الاصطناعي باستخدام Groq (الطلقة)
+// 3. دالة الذكاء الاصطناعي باستخدام Groq (الموديل الأقوى llama-3.3-70b)
 async function askAI(prompt, retries = 2) {
   try {
     const response = await axios.post(
       "https://api.groq.com/openai/v1/chat/completions",
       {
-        model: "llama3-8b-8192", // موديل سريع جداً وبيفهم مصري
+        model: "llama-3.3-70b-versatile", // الموديل ده جبار في فهم الكلام المكسر واللغات
         messages: [{ role: "user", content: prompt }],
-        temperature: 0.7
+        temperature: 0.8 // زيادة الحرارة شوية عشان يكون مرن في فهم الأخطاء الإملائية
       },
       {
         headers: {
           "Authorization": `Bearer ${GROQ_API_KEY}`,
           "Content-Type": "application/json"
         },
-        timeout: 8000
+        timeout: 10000
       }
     );
 
     return response.data.choices[0]?.message?.content || fallbackReply();
   } catch (error) {
-    console.error("❌ Groq Error:", error.response?.data || error.message);
+    // طباعة الخطأ بالتفصيل عشان نعرف العيب فين لو الـ AI ما ردش
+    console.error("❌ Groq Error Details:", error.response?.data || error.message);
     if (retries > 0) {
       await new Promise(r => setTimeout(r, 1000));
       return await askAI(prompt, retries - 1);
@@ -91,13 +92,14 @@ app.post('/webhook', async (req, res) => {
 
         try {
           const servicesContext = JSON.stringify(products);
-          const prompt = `أنت موظف مبيعات محترف في وكالة "ELAZ" لخدمات الديجيتال.
+          const prompt = `أنت موظف مبيعات ذكي جداً في وكالة "ELAZ" لخدمات الديجيتال.
           خدماتنا هي: ${servicesContext}
           
-          المطلوب:
-          - رد بلهجة مصرية عامية "ودودة جداً" وشاطرة في البيع.
-          - لو سألك بتعملوا إيه، اشرحله الخدمات بأسلوب جذاب.
-          - لا تخرج عن نطاق الخدمات المتاحة.
+          إرشادات الرد:
+          - رد بلهجة مصرية عامية "ودودة جداً" ومحترفة.
+          - أنت عبقري في فهم العميل حتى لو كتب كلمات غلط (مثلاً لو قال عسان يقصد عشان، لو قال لوحو يقصد لوجو).
+          - افهم أي لغة يكتب بها العميل ورد عليه بنفس المستوى.
+          - هدفك تشرح الخدمات اللي في الملف وتقنع العميل بينا.
           
           رسالة العميل: ${userMessage}`;
 
@@ -127,4 +129,4 @@ async function callSendAPI(sender_psid, responseText) {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("🚀 ELAZ Bot is Live with Groq AI!"));
+app.listen(PORT, () => console.log("🚀 ELAZ Bot is Live with Llama 3.3!"));
