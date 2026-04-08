@@ -1,6 +1,8 @@
-const express = require('express');
+Const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
+const fs = require("fs");
+const path = require("path");
 
 const app = express().use(bodyParser.json());
 
@@ -8,69 +10,98 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
+// تحميل الخدمات
+let products = {};
+const productsPath = path.join(__dirname, "products.json");
+
+function loadProducts() {
+  try {
+    const data = fs.readFileSync(productsPath, "utf8");
+    products = JSON.parse(data);
+    console.log("✅ services loaded");
+  } catch (err) {
+    console.error("❌ error loading products");
+  }
+}
+loadProducts();
+
+// التحقق من Webhook
 app.get('/webhook', (req, res) => {
-    let mode = req.query['hub.mode'];
-    let token = req.query['hub.verify_token'];
-    let challenge = req.query['hub.challenge'];
-    if (mode && token && mode === 'subscribe' && token === VERIFY_TOKEN) {
-        res.status(200).send(challenge);
+    if (req.query['hub.verify_token'] === VERIFY_TOKEN) {
+        res.status(200).send(req.query['hub.challenge']);
     } else {
         res.sendStatus(403);
     }
 });
 
+// استقبال الرسائل
 app.post('/webhook', async (req, res) => {
-    let body = req.body;
+    const body = req.body;
     if (body.object === 'page') {
+        res.status(200).send('EVENT_RECEIVED');
+
         for (const entry of body.entry) {
-            const webhook_event = entry.messaging?.[0];
-            if (!webhook_event || webhook_event.message?.is_echo) continue;
-            const sender_psid = webhook_event.sender.id;
-            if (webhook_event.message && webhook_event.message.text) {
-                const userMessage = webhook_event.message.text;
+            const event = entry.messaging?.[0];
+            if (event && event.message && !event.message.is_echo && event.message.text) {
+                const sender_psid = event.sender.id;
+                const userMessage = event.message.text;
 
-                // هنختصرهم في أهم رابطين عشان السرعة
-                const urls = [
-                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-                    `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`
-                ];
+                try {
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
 
-                let finalResponse = "";
-                let lastError = "";
+                    // تجهيز الخدمات
+                    const productsText = Object.keys(products)
+                      .map(key => {
+                        const p = products[key];
+                        return `${key} - ${p.name} - ${p.price} - ${p.description}`;
+                      })
+                      .join("\n");
 
-                for (let url of urls) {
-                    try {
-                        const response = await axios.post(url, {
-                            contents: [{ parts: [{ text: userMessage }] }]
-                        }, { timeout: 7000 });
+                    const prompt = `
+أنت موظف مبيعات في شركة "إيلاز".
 
-                        if (response.data.candidates?.[0]?.content?.parts?.[0]?.text) {
-                            finalResponse = response.data.candidates[0].content.parts[0].text;
-                            break; 
-                        }
-                    } catch (e) {
-                        // بيحفظ آخر خطأ حصل عشان يقولك عليه
-                        lastError = e.response?.data?.error?.message || e.message;
-                        console.error("Attempt failed:", lastError);
-                    }
+الخدمات:
+${productsText}
+
+قواعد:
+- اتكلم فقط عن الخدمات
+- ساعد العميل يفهم ويختار
+- اقترح أفضل خدمة حسب كلامه
+- لا تخترع خدمات
+- لو السؤال خارج الشغل قول:
+"آسف، أقدر أساعدك بس في خدمات إيلاز."
+
+سؤال العميل:
+${userMessage}
+`;
+
+                    const response = await axios.post(url, {
+                        contents: [{ parts: [{ text: prompt }] }]
+                    });
+
+                    const aiResponse = response.data.candidates?.[0]?.content?.parts?.[0]?.text || "أهلاً بيك!";
+                    await callSendAPI(sender_psid, aiResponse);
+
+                } catch (error) {
+                    const errMsg = error.response?.data?.error?.message || error.message;
+                    await callSendAPI(sender_psid, "❌ خطأ: " + errMsg);
                 }
-
-                // لو مفيش رد، هيبعتلك السبب الحقيقي بدل "مشكلة في الاتصال"
-                await callSendAPI(sender_psid, finalResponse || `خطأ محدد: ${lastError}`);
             }
         }
-        res.status(200).send('EVENT_RECEIVED');
     }
 });
 
+// إرسال رسالة
 async function callSendAPI(sender_psid, responseText) {
     try {
         await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
             recipient: { id: sender_psid },
             message: { text: responseText }
         });
-    } catch (err) { console.error("FB Error"); }
+    } catch (err) {
+        console.error("FB ERROR");
+    }
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Debug Mode Live! 🚀`));
+app.listen(PORT, () => console.log("🚀 البوت شغال"));
