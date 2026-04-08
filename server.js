@@ -10,22 +10,71 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// تحميل الخدمات
+// 1. تحميل الخدمات من ملف products.json
 let products = {};
 const productsPath = path.join(__dirname, "products.json");
 
 function loadProducts() {
   try {
-    const data = fs.readFileSync(productsPath, "utf8");
-    products = JSON.parse(data);
-    console.log("✅ services loaded");
+    if (fs.existsSync(productsPath)) {
+      const data = fs.readFileSync(productsPath, "utf8");
+      products = JSON.parse(data);
+      console.log("✅ Services loaded successfully");
+    } else {
+      console.error("❌ products.json not found!");
+    }
   } catch (err) {
-    console.error("❌ error loading products");
+    console.error("❌ Error parsing products.json:", err.message);
   }
 }
 loadProducts();
 
-// Webhook Verification
+// 2. الرد الاحتياطي في حال فشل Gemini
+function fallbackReply() {
+  return `أهلاً بك في وكالة ELAZ 👋
+
+نعتذر عن التأخير البسيط، هذه هي خدماتنا المتاحة حالياً:
+
+1️⃣ Graphic Design (هوية بصرية ولوجو)
+2️⃣ Media Buying (إعلانات ممولة)
+3️⃣ AI Automation (بوتات ذكية)
+4️⃣ Web Development (قريباً)
+
+أخبرنا بالخدمة التي تهمك وسيقوم أحد ممثلينا بالتواصل معك 👌`;
+}
+
+// 3. دالة التواصل مع Gemini (مع Retry و Detailed Logging)
+async function askGemini(prompt, retries = 3) {
+  try {
+    // استخدمنا v1beta وموديل flash-latest لأنه الأضمن
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
+
+    const response = await axios.post(url, {
+      contents: [{ parts: [{ text: prompt }] }]
+    }, { timeout: 10000 });
+
+    return response.data.candidates?.[0]?.content?.parts?.[0]?.text || fallbackReply();
+
+  } catch (error) {
+    // طباعة تفاصيل الخطأ في Render Logs
+    if (error.response) {
+      console.error("❌ Gemini API Error Details:", JSON.stringify(error.response.data));
+    } else {
+      console.error("❌ Connection Error:", error.message);
+    }
+
+    if (retries > 0) {
+      console.log(`🔄 Retrying... (${3 - retries + 1})`);
+      await new Promise(r => setTimeout(r, 1500));
+      return await askGemini(prompt, retries - 1);
+    }
+
+    console.log("⚠️ All retries failed, using fallback.");
+    return fallbackReply();
+  }
+}
+
+// 4. Webhook Verification
 app.get('/webhook', (req, res) => {
   if (req.query['hub.verify_token'] === VERIFY_TOKEN) {
     res.status(200).send(req.query['hub.challenge']);
@@ -34,44 +83,7 @@ app.get('/webhook', (req, res) => {
   }
 });
 
-// 🧠 fallback لو Gemini وقع
-function fallbackReply() {
-  return `أهلاً بيك 👋
-
-نقدر نساعدك في الخدمات دي:
-
-1️⃣ Graphic Design (لوجو وهوية بصرية)
-2️⃣ Media Buying (إعلانات ممولة)
-3️⃣ AI Automation (بوتات وأتمتة)
-4️⃣ Web Development (قريباً)
-
-قولّي عايز أنهي خدمة وأنا أساعدك 👌`;
-}
-
-// 🤖 Gemini مع Retry + Fallback
-async function askGemini(prompt, retries = 3) {
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
-
-    const response = await axios.post(url, {
-      contents: [{ parts: [{ text: prompt }] }]
-    });
-
-    return response.data.candidates?.[0]?.content?.parts?.[0]?.text || fallbackReply();
-
-  } catch (error) {
-    if (retries > 0) {
-      console.log("🔄 إعادة المحاولة...");
-      await new Promise(r => setTimeout(r, 1000));
-      return await askGemini(prompt, retries - 1);
-    }
-
-    console.log("❌ Gemini فشل، استخدام fallback");
-    return fallbackReply();
-  }
-}
-
-// استقبال الرسائل
+// 5. استقبال الرسائل
 app.post('/webhook', async (req, res) => {
   const body = req.body;
 
@@ -86,44 +98,29 @@ app.post('/webhook', async (req, res) => {
         const userMessage = event.message.text;
 
         try {
-          // تجهيز الخدمات من JSON
-          const productsText = Object.keys(products)
-            .map(key => {
-              const p = products[key];
-              return `${key} - ${p.name} - ${p.price} - ${p.description}`;
-            })
-            .join("\n");
-
-          const prompt = `
-أنت موظف مبيعات في شركة "إيلاز".
-
-الخدمات:
-${productsText}
-
-قواعد:
-- اتكلم فقط عن الخدمات
-- ساعد العميل يفهم ويختار
-- اقترح أفضل خدمة حسب كلامه
-- لا تخترع خدمات
-- لو السؤال خارج الشغل قول:
-"آسف، أقدر أساعدك بس في خدمات إيلاز."
-
-سؤال العميل:
-${userMessage}
-`;
+          const servicesContext = JSON.stringify(products, null, 2);
+          const prompt = `أنت موظف مبيعات ذكي في شركة "إيلاز" (ELAZ).
+          الخدمات المتاحة: ${servicesContext}
+          
+          القواعد:
+          - رد بلهجة مصرية احترافية وودودة.
+          - لا تقترح خدمات خارج القائمة.
+          - إذا سألك عن شيء غير موجود، اعتذر بذوق ووجهه لخدمات إيلاز.
+          
+          رسالة العميل: ${userMessage}`;
 
           const aiResponse = await askGemini(prompt);
           await callSendAPI(sender_psid, aiResponse);
 
         } catch (error) {
-          await callSendAPI(sender_psid, "❌ حصل خطأ، حاول تاني");
+          console.error("Post Processing Error:", error.message);
         }
       }
     }
   }
 });
 
-// إرسال رسالة
+// 6. إرسال الرسالة لفيسبوك
 async function callSendAPI(sender_psid, responseText) {
   try {
     await axios.post(
@@ -134,10 +131,9 @@ async function callSendAPI(sender_psid, responseText) {
       }
     );
   } catch (err) {
-    console.error("FB ERROR");
+    console.error("❌ FB Send Error");
   }
 }
 
-// تشغيل السيرفر
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("🚀 البوت شغال"));
+app.listen(PORT, () => console.log("🚀 ELAZ Bot is up and running!"));
