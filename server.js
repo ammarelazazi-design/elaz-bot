@@ -10,90 +10,82 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
-// 1. ذاكرة مؤقتة للمحادثات
-const chatHistory = {};
+let chatHistory = {};
 
-// 2. تحميل الخدمات
-let products = {};
-const productsPath = path.join(__dirname, "products.json");
-function loadProducts() {
-    if (fs.existsSync(productsPath)) {
-        try {
-            products = JSON.parse(fs.readFileSync(productsPath, "utf8"));
-            console.log("✅ Services details loaded");
-        } catch (e) { console.error("❌ Error parsing products.json"); }
+// 1. جلب بيانات العميل (الاسم والجنس)
+async function getUserInfo(sender_psid) {
+    try {
+        const response = await axios.get(`https://graph.facebook.com/${sender_psid}?fields=first_name,gender&access_token=${PAGE_ACCESS_TOKEN}`);
+        return {
+            firstName: response.data.first_name || "عزيزي العميل",
+            gender: response.data.gender || "unknown"
+        };
+    } catch (error) {
+        return { firstName: "عزيزي العميل", gender: "unknown" };
     }
 }
-loadProducts();
 
-// 3. دالة الذكاء الاصطناعي (Groq - Llama 3.3 70B)
-async function askAI(sender_psid, userMessage) {
+// 2. محرك الذكاء الاصطناعي (النسخة الحرباء)
+async function askAI(sender_psid, userMessage, userInfo) {
     try {
         if (!chatHistory[sender_psid]) chatHistory[sender_psid] = [];
         const history = chatHistory[sender_psid].map(msg => `${msg.role}: ${msg.content}`).join("\n");
 
-        const prompt = `أنت موظف مبيعات خبير في وكالة ELAZ لخدمات الديجيتال.
-        بيانات الخدمات التفصيلية: ${JSON.stringify(products)}
-        سياق المحادثة: ${history}
+        let products = "";
+        try {
+            products = fs.readFileSync(path.join(__dirname, "products.json"), "utf8");
+        } catch (e) { products = "خدمات جرافيك، إعلانات، وبوتات ذكية."; }
 
-        قواعد الرد الاحترافية:
-        1. **الشرح التفصيلي**: لو العميل سأل عن خدمة، اشرح له "التفاصيل" (Details) و "طريقة العمل" (Process) من ملف البيانات بذكاء.
-        2. **نطاق العمل**: رد فقط في تخصصات الوكالة. لو سأل بره الموضوع، اعتذر بذكاء ورجعه لخدماتنا.
-        3. **اللغات**: رد بنفس لغة العميل (عربي، إنجليزي.. إلخ).
-        4. **اللهجة المصرية**: لو العميل اتكلم عربي، رد بمصري عامية "شيك" ومختصرة ومقنعة.
-        5. **الذكاء الإملائي**: افهم الكلمات المكتوبة غلط (عسان، لوحو، اعلانات مموله) وكمل كلامك عادي.
-        6. **التحويل**: لو العميل مهتم يطلب خدمة، وجهه لواتساب عمار: [حط رقمك هنا].
+        const prompt = `أنت المساعد الذكي لوكالة ELAZ. 
+        العميل: ${userInfo.firstName} | الجنس: ${userInfo.gender}
+        رسالة العميل: "${userMessage}"
 
-        رسالة العميل الحالية: ${userMessage}`;
+        قواعدك:
+        1. **المحاكاة اللغوية**: رد بنفس لغة ونبرة العميل (عامية مصرية، فصحى، أو إنجليزي).
+        2. **التشخيص**: خاطب العميل باسمه ${userInfo.firstName} بأسلوب لبق يناسب جنسه.
+        3. **الزتونة**: رد في نقاط مختصرة (1.. 2.. 3..).
+        4. **التخصص**: ممنوع الرغي في مواضيع خارج الوكالة (أفلام، كورة، إلخ). اعتذر بلباقة ورجعه لخدماتنا.
+        5. **التواصل**: رقم واتساب عمار هو 01557963125.
+        
+        بيانات الخدمات: ${products}
+
+        رد الآن بذكاء:`;
 
         const response = await axios.post("https://api.groq.com/openai/v1/chat/completions", {
             model: "llama-3.3-70b-versatile",
             messages: [{ role: "user", content: prompt }],
-            temperature: 0.4
+            temperature: 0.6
         }, {
             headers: { "Authorization": `Bearer ${GROQ_API_KEY}` },
-            timeout: 12000
+            timeout: 15000
         });
 
-        const aiResponse = response.data.choices[0]?.message?.content || "منور في ELAZ! محتاج مساعدة في خدماتنا؟";
-        
-        // تحديث الذاكرة
+        const aiResponse = response.data.choices[0]?.message?.content;
         chatHistory[sender_psid].push({ role: "user", content: userMessage });
         chatHistory[sender_psid].push({ role: "assistant", content: aiResponse });
-        if (chatHistory[sender_psid].length > 4) chatHistory[sender_psid].shift();
+        if (chatHistory[sender_psid].length > 6) chatHistory[sender_psid].shift();
 
         return aiResponse;
     } catch (error) {
-        console.error("❌ AI Error:", error.message);
-        return "أهلاً بك في ELAZ 👋، نعتذر عن عطل بسيط، كيف يمكنني مساعدتك في خدماتنا؟";
+        return `أهلاً بك يا ${userInfo.firstName}، كيف يمكنني مساعدتك في خدمات وكالة ELAZ؟`;
     }
 }
 
-// 4. إرسال الرسالة مع أزرار رد سريع
+// 3. إرسال الرسائل
 async function callSendAPI(sender_psid, text) {
-    const messageData = {
+    await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
         recipient: { id: sender_psid },
         message: {
             text: text,
             quick_replies: [
-                { content_type: "text", title: "🎨 تصميم جرافيك", payload: "DESIGN" },
-                { content_type: "text", title: "📢 إعلانات ممولة", payload: "ADS" },
-                { content_type: "text", title: "🤖 أتمتة ذكية", payload: "AI" },
-                { content_type: "text", title: "📞 تواصل معنا", payload: "CONTACT" }
+                { content_type: "text", title: "🎨 الخدمات", payload: "SERVICES" },
+                { content_type: "text", title: "📞 تواصل مباشر", payload: "CONTACT" }
             ]
         }
-    };
-    try {
-        await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, messageData);
-    } catch (err) { console.error("❌ FB SEND Error"); }
+    });
 }
 
-// 5. Webhook
-app.get('/webhook', (req, res) => {
-    if (req.query['hub.verify_token'] === VERIFY_TOKEN) res.status(200).send(req.query['hub.challenge']);
-    else res.sendStatus(403);
-});
-
+// 4. الـ Webhook الرئيسي
 app.post('/webhook', async (req, res) => {
     const body = req.body;
     if (body.object === 'page') {
@@ -101,11 +93,34 @@ app.post('/webhook', async (req, res) => {
         for (const entry of body.entry) {
             const event = entry.messaging?.[0];
             if (event?.message?.text && !event.message.is_echo) {
-                const aiResponse = await askAI(event.sender.id, event.message.text);
-                await callSendAPI(event.sender.id, aiResponse);
+                const sid = event.sender.id;
+
+                // ميزة استخراج الرقم ليك يا عمار
+                if (event.message.text.trim() === "رقمي") {
+                    await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+                        recipient: { id: sid },
+                        message: { text: "الـ ID بتاعك هو: " + sid }
+                    });
+                    return;
+                }
+
+                const userInfo = await getUserInfo(sid);
+                
+                // إظهار جاري الكتابة
+                await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+                    recipient: { id: sid }, sender_action: "typing_on"
+                }).catch(e => {});
+
+                const aiResponse = await askAI(sid, event.message.text, userInfo);
+                await callSendAPI(sid, aiResponse);
             }
         }
     }
 });
 
-app.listen(process.env.PORT || 3000, () => console.log("🚀 ELAZ Bot is officially a pro salesperson!"));
+app.get('/webhook', (req, res) => {
+    if (req.query['hub.verify_token'] === VERIFY_TOKEN) res.status(200).send(req.query['hub.challenge']);
+    else res.sendStatus(403);
+});
+
+app.listen(process.env.PORT || 3000, () => console.log("🚀 ELAZ Ultimate AI is Live!"));
