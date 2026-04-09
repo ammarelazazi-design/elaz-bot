@@ -4,9 +4,11 @@ const axios = require('axios');
 const fs = require("fs");
 const path = require("path");
 
+// إجبار السيرفر على استخدام ترميز UTF-8
+process.env.LANG = 'en_US.UTF-8';
+
 const app = express().use(bodyParser.json());
 
-// المفاتيح المسحوبة من إعدادات Render
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -15,60 +17,53 @@ const AMMAR_PSID = "8279251338792163";
 
 let chatHistory = {};
 
-// 1. نظام إشعارات الأخطاء لعمار (لو السيرفر تعب يبعتلك)
+// 1. نظام إشعارات الأخطاء لعمار
 async function sendErrorToAmmar(errorMsg) {
     try {
         await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
             recipient: { id: AMMAR_PSID },
-            message: { text: `⚠️ الحقني يا عمار أنا واقع!\nالسبب: ${errorMsg}` }
+            message: { text: "⚠️ تنبيه: فيه مشكلة تقنية بسيطة حصلت في السيرفر." }
         });
-    } catch (e) { console.error("Error reporting failed"); }
+    } catch (e) { console.error("Error log failed"); }
 }
 
-// 2. إرسال تنبيه مبيعات لعمار (ماسنجر)
+// 2. إرسال تنبيه مبيعات لعمار
 async function sendAlertToAmmar(clientName, userMsg) {
     try {
         await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
             recipient: { id: AMMAR_PSID },
-            message: { text: `🚨 عميل لقطة يا عمار!\nالاسم: ${clientName}\nبيسأل عن: "${userMsg}"\nادخل خلص البيعة دلوقتي.` }
+            message: { text: `🚨 عميل جديد: ${clientName}\nبيسأل عن: "${userMsg}"` }
         });
     } catch (e) {}
 }
 
-// 3. إرسال البيانات لـ Zapier (جوجل شيتس)
+// 3. إرسال البيانات لـ Zapier
 async function sendToZapier(clientData) {
     try {
         if (ZAPIER_WEBHOOK_URL) {
             await axios.post(ZAPIER_WEBHOOK_URL, clientData);
-            console.log("✅ البيانات وصلت لزابير");
         }
-    } catch (e) { console.error("❌ فشل إرسال البيانات لزابير"); }
+    } catch (e) {}
 }
 
-// 4. جلب بيانات العميل (الاسم والنوع)
+// 4. جلب بيانات العميل
 async function getUserInfo(sender_psid) {
     try {
         const response = await axios.get(`https://graph.facebook.com/${sender_psid}?fields=first_name,gender&access_token=${PAGE_ACCESS_TOKEN}`);
-        return { firstName: response.data.first_name || "عزيزي العميل", gender: response.data.gender || "unknown" };
-    } catch (error) { return { firstName: "عزيزي العميل", gender: "unknown" }; }
+        return { firstName: response.data.first_name || "عزيزي", gender: response.data.gender || "unknown" };
+    } catch (error) { return { firstName: "عزيزي", gender: "unknown" }; }
 }
 
-// 5. محرك الذكاء الاصطناعي (الردود الذكية)
+// 5. محرك الذكاء الاصطناعي
 async function askAI(sender_psid, userMessage, userInfo) {
     try {
-        let products = "";
-        try { products = fs.readFileSync(path.join(__dirname, "products.json"), "utf8"); } catch (e) { products = "خدمات جرافيك وتسويق وبوتات."; }
-
-        const prompt = `أنت المساعد الذكي لوكالة ELAZ. العميل: ${userInfo.firstName} | الجنس: ${userInfo.gender}.
-        القواعد:
-        1. رد بنفس لغة ونبرة العميل (عامية مصرية/فصحى).
-        2. الأسعار: وضّح أنها تعتمد على حجم الشغل والمدة (لا تعطِ سعراً ثابتاً).
-        3. المواعيد: بلغه إنك أبلغت "أستاذ عمار" وهيرد عليه حالاً.
-        4. معرض الأعمال: لو سأل، وجهه لزيارة معرض أعمالنا.
-        5. الزتونة: ردود مختصرة في نقاط.
-        
-        رسالة العميل: "${userMessage}"
-        الخدمات: ${products}`;
+        const prompt = `أنت مساعد وكالة ELAZ الرقمية. العميل: ${userInfo.firstName}.
+        القواعد: 
+        - رد بلهجة العميل (مصرية أو فصحى).
+        - لو سأل عن السعر: وضح أنه حسب حجم الشغل والمدة.
+        - لو طلب ميعاد: بلغه إنك أرسلت طلباً لعمار.
+        - الردود مختصرة ومنظمة.
+        رسالة العميل: "${userMessage}"`;
 
         const response = await axios.post("https://api.groq.com/openai/v1/chat/completions", {
             model: "llama-3.3-70b-versatile",
@@ -79,25 +74,27 @@ async function askAI(sender_psid, userMessage, userInfo) {
         return response.data.choices[0]?.message?.content;
     } catch (error) {
         await sendErrorToAmmar(error.message);
-        return `أهلاً يا ${userInfo.firstName}، واجهت مشكلة بسيطة، أستاذ عمار هيتواصل معاك فوراً لحل طلبك.`;
+        return `أهلاً يا ${userInfo.firstName}، واجهت مشكلة بسيطة، أستاذ عمار هيتواصل معاك حالاً.`;
     }
 }
 
-// 6. إرسال الرسائل النهائية
+// 6. إرسال الرسالة النهائية
 async function callSendAPI(sender_psid, text) {
-    await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-        recipient: { id: sender_psid },
-        message: {
-            text: text,
-            quick_replies: [
-                { content_type: "text", title: "🎨 الخدمات", payload: "SERVICES" },
-                { content_type: "text", title: "📞 تواصل مباشر", payload: "CONTACT" }
-            ]
-        }
-    });
+    try {
+        await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+            recipient: { id: sender_psid },
+            message: {
+                text: text,
+                quick_replies: [
+                    { content_type: "text", title: "🎨 الخدمات", payload: "SERVICES" },
+                    { content_type: "text", title: "📞 تواصل مباشر", payload: "CONTACT" }
+                ]
+            }
+        });
+    } catch (e) {}
 }
 
-// 7. الـ Webhook الرئيسي
+// 7. الـ Webhook
 app.post('/webhook', async (req, res) => {
     const body = req.body;
     if (body.object === 'page') {
@@ -106,19 +103,19 @@ app.post('/webhook', async (req, res) => {
             const event = entry.messaging?.[0];
             if (event?.message?.text && !event.message.is_echo) {
                 const sid = event.sender.id;
-                if (sid === AMMAR_PSID) return; // عشان ميردش عليك أنت
+                if (sid === AMMAR_PSID) return;
 
                 const userInfo = await getUserInfo(sid);
                 const userMsg = event.message.text.toLowerCase();
 
-                // تفعيل جاري الكتابة
+                // تفعيل "جاري الكتابة"
                 await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
                     recipient: { id: sid }, sender_action: "typing_on"
                 }).catch(e => {});
 
-                // فحص الكلمات "اللقطة" (سعر أو ميعاد)
-                const triggerWords = ["ميعاد", "موعد", "احجز", "مقابلة", "مكالمة", "كلمني", "بكم", "سعر", "السعر"];
-                if (triggerWords.some(word => userMsg.includes(word))) {
+                // فحص الكلمات اللقطة (سعر/ميعاد)
+                const triggers = ["سعر", "بكام", "كم", "موعد", "ميعاد", "احجز", "كلمني"];
+                if (triggers.some(word => userMsg.includes(word))) {
                     await sendAlertToAmmar(userInfo.firstName, event.message.text);
                     await sendToZapier({
                         name: userInfo.firstName,
@@ -129,9 +126,8 @@ app.post('/webhook', async (req, res) => {
 
                 const aiResponse = await askAI(sid, event.message.text, userInfo);
                 
-                // تأخير 3 ثواني للواقعية
-                setTimeout(async () => {
-                    await callSendAPI(sid, aiResponse);
+                setTimeout(() => {
+                    callSendAPI(sid, aiResponse);
                 }, 3000);
             }
         }
@@ -143,4 +139,4 @@ app.get('/webhook', (req, res) => {
     else res.sendStatus(403);
 });
 
-app.listen(process.env.PORT || 3000, () => console.log("🚀 ELAZ Full System is Online!"));
+app.listen(process.env.PORT || 3000);
