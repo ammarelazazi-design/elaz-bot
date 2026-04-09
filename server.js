@@ -2,141 +2,115 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
 const fs = require("fs");
-const path = require("path");
 
-// إجبار السيرفر على استخدام ترميز UTF-8
-process.env.LANG = 'en_US.UTF-8';
-
+// إعداد السيرفر
 const app = express().use(bodyParser.json());
 
+// المفاتيح من إعدادات Render
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const ZAPIER_WEBHOOK_URL = process.env.ZAPIER_WEBHOOK_URL;
 const AMMAR_PSID = "8279251338792163"; 
 
-let chatHistory = {};
-
-// 1. نظام إشعارات الأخطاء لعمار
-async function sendErrorToAmmar(errorMsg) {
+// 1. إعداد واجهة الصفحة (بتشتغل مرة واحدة)
+async function setupMessengerProfile() {
     try {
-        await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-            recipient: { id: AMMAR_PSID },
-            message: { text: "⚠️ تنبيه: فيه مشكلة تقنية بسيطة حصلت في السيرفر." }
+        await axios.post(`https://graph.facebook.com/v19.0/me/messenger_profile?access_token=${PAGE_ACCESS_TOKEN}`, {
+            "get_started": { "payload": "START_ELAZ" },
+            "greeting": [{
+                "locale": "default",
+                "text": "أهلاً بيك في إيلاز 🚀\nبنساعدك تكبر شغلك وتزود مبيعاتك من خلال التصميم، الإعلانات، وحلول الذكاء الاصطناعي.\n\nدوس على (بدء الاستخدام) وخلينا نبدأ."
+            }]
         });
-    } catch (e) { console.error("Error log failed"); }
+        console.log("✅ تم ضبط واجهة الصفحة بنجاح");
+    } catch (e) { console.error("❌ فشل ضبط الواجهة"); }
 }
 
-// 2. إرسال تنبيه مبيعات لعمار
-async function sendAlertToAmmar(clientName, userMsg) {
+// 2. جلب اسم العميل
+async function getUserInfo(psid) {
     try {
-        await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-            recipient: { id: AMMAR_PSID },
-            message: { text: `🚨 عميل جديد: ${clientName}\nبيسأل عن: "${userMsg}"` }
-        });
-    } catch (e) {}
+        const res = await axios.get(`https://graph.facebook.com/${psid}?fields=first_name&access_token=${PAGE_ACCESS_TOKEN}`);
+        return res.data.first_name || "عزيزي العميل";
+    } catch (e) { return "عزيزي العميل"; }
 }
 
-// 3. إرسال البيانات لـ Zapier
-async function sendToZapier(clientData) {
-    try {
-        if (ZAPIER_WEBHOOK_URL) {
-            await axios.post(ZAPIER_WEBHOOK_URL, clientData);
-        }
-    } catch (e) {}
-}
-
-// 4. جلب بيانات العميل
-async function getUserInfo(sender_psid) {
-    try {
-        const response = await axios.get(`https://graph.facebook.com/${sender_psid}?fields=first_name,gender&access_token=${PAGE_ACCESS_TOKEN}`);
-        return { firstName: response.data.first_name || "عزيزي", gender: response.data.gender || "unknown" };
-    } catch (error) { return { firstName: "عزيزي", gender: "unknown" }; }
-}
-
-// 5. محرك الذكاء الاصطناعي
-async function askAI(sender_psid, userMessage, userInfo) {
-    try {
-        const prompt = `أنت مساعد وكالة ELAZ الرقمية. العميل: ${userInfo.firstName}.
-        القواعد: 
-        - رد بلهجة العميل (مصرية أو فصحى).
-        - لو سأل عن السعر: وضح أنه حسب حجم الشغل والمدة.
-        - لو طلب ميعاد: بلغه إنك أرسلت طلباً لعمار.
-        - الردود مختصرة ومنظمة.
-        رسالة العميل: "${userMessage}"`;
-
-        const response = await axios.post("https://api.groq.com/openai/v1/chat/completions", {
-            model: "llama-3.3-70b-versatile",
-            messages: [{ role: "user", content: prompt }],
-            temperature: 0.6
-        }, { headers: { "Authorization": `Bearer ${GROQ_API_KEY}` }, timeout: 12000 });
-
-        return response.data.choices[0]?.message?.content;
-    } catch (error) {
-        await sendErrorToAmmar(error.message);
-        return `أهلاً يا ${userInfo.firstName}، واجهت مشكلة بسيطة، أستاذ عمار هيتواصل معاك حالاً.`;
-    }
-}
-
-// 6. إرسال الرسالة النهائية
-async function callSendAPI(sender_psid, text) {
-    try {
-        await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-            recipient: { id: sender_psid },
-            message: {
-                text: text,
-                quick_replies: [
-                    { content_type: "text", title: "🎨 الخدمات", payload: "SERVICES" },
-                    { content_type: "text", title: "📞 تواصل مباشر", payload: "CONTACT" }
-                ]
-            }
-        });
-    } catch (e) {}
-}
-
-// 7. الـ Webhook
+// 3. الـ Webhook الرئيسي
 app.post('/webhook', async (req, res) => {
     const body = req.body;
     if (body.object === 'page') {
         res.status(200).send('EVENT_RECEIVED');
+        
         for (const entry of body.entry) {
             const event = entry.messaging?.[0];
-            if (event?.message?.text && !event.message.is_echo) {
-                const sid = event.sender.id;
-                if (sid === AMMAR_PSID) return;
+            const sid = event?.sender?.id;
+            if (!sid || sid === AMMAR_PSID) continue;
 
-                const userInfo = await getUserInfo(sid);
-                const userMsg = event.message.text.toLowerCase();
+            const firstName = await getUserInfo(sid);
 
-                // تفعيل "جاري الكتابة"
-                await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-                    recipient: { id: sid }, sender_action: "typing_on"
-                }).catch(e => {});
+            // أ- لو داس على زرار البداية
+            if (event.postback?.payload === 'START_ELAZ') {
+                const welcomeMsg = `أهلاً بيك يا ${firstName} في إيلاز 🚀
+بنساعدك تكبر شغلك وتزود مبيعاتك من خلال:
+- تصميم احترافي
+- إعلانات ممولة
+- حلول ذكاء اصطناعي
 
-                // فحص الكلمات اللقطة (سعر/ميعاد)
-                const triggers = ["سعر", "بكام", "كم", "موعد", "ميعاد", "احجز", "كلمني"];
-                if (triggers.some(word => userMsg.includes(word))) {
-                    await sendAlertToAmmar(userInfo.firstName, event.message.text);
-                    await sendToZapier({
-                        name: userInfo.firstName,
-                        message: event.message.text,
-                        time: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' })
-                    });
+احكيلي محتاج إيه بالظبط وأنا أرشحلك الحل المناسب 👌`;
+                await sendMsg(sid, welcomeMsg);
+                continue;
+            }
+
+            // ب- لو بعت رسالة نصية
+            if (event.message?.text && !event.message.is_echo) {
+                const userMsg = event.message.text;
+
+                // تنبيه لزابير وعمار لو فيه (سعر أو ميعاد)
+                if (["سعر", "بكام", "ميعاد", "احجز", "كام"].some(w => userMsg.includes(w))) {
+                    if (ZAPIER_WEBHOOK_URL) {
+                        axios.post(ZAPIER_WEBHOOK_URL, { name: firstName, message: userMsg, time: new Date().toLocaleString('ar-EG') });
+                    }
+                    // تنبيه ليك شخصياً
+                    sendMsg(AMMAR_PSID, `🚨 عميل بيسأل عن سعر/ميعاد:\nالاسم: ${firstName}\nالرسالة: ${userMsg}`);
                 }
 
-                const aiResponse = await askAI(sid, event.message.text, userInfo);
-                
-                setTimeout(() => {
-                    callSendAPI(sid, aiResponse);
-                }, 3000);
+                // الرد بالذكاء الاصطناعي
+                const aiResponse = await askGroq(userMsg, firstName);
+                await sendMsg(sid, aiResponse);
             }
         }
     }
 });
 
+// 4. محرك الذكاء الاصطناعي (Groq)
+async function askGroq(text, name) {
+    try {
+        const response = await axios.post("https://api.groq.com/openai/v1/chat/completions", {
+            model: "llama-3.3-70b-versatile",
+            messages: [{ role: "user", content: `أنت مساعد وكالة ELAZ. العميل اسمه ${name}. رد بلهجة مصرية محترمة ومختصرة جداً عن خدماتنا (تصميم، ماركتنج، بوتات). لو سأل عن سعر قوله إن أستاذ عمار هيكلمه يحدد معاه. رسالة العميل: ${text}` }]
+        }, { headers: { "Authorization": `Bearer ${GROQ_API_KEY}` } });
+        return response.data.choices[0].message.content;
+    } catch (e) { return "وصلت رسالتك يا فنان، أستاذ عمار هيتواصل معاك حالاً."; }
+}
+
+// 5. دالة إرسال الرسائل
+async function sendMsg(sid, text) {
+    try {
+        await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+            recipient: { id: sid },
+            message: { text: text }
+        });
+    } catch (e) {}
+}
+
+// التحقق من الـ Webhook
 app.get('/webhook', (req, res) => {
     if (req.query['hub.verify_token'] === VERIFY_TOKEN) res.status(200).send(req.query['hub.challenge']);
     else res.sendStatus(403);
 });
 
-app.listen(process.env.PORT || 3000);
+// تشغيل السيرفر
+app.listen(process.env.PORT || 3000, () => {
+    console.log("🚀 ELAZ System is LIVE!");
+    setupMessengerProfile();
+});
