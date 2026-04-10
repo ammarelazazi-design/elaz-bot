@@ -202,24 +202,43 @@ app.post('/webhook', async (req, res) => {
             continue;
         }
 
-        if (event.message?.text) {
-            const userMsg = event.message.text.trim();
-            if (getOrder(sid)) { if (await handleOrderFlow(sid, userMsg, name)) continue; }
-            if (/^(أهلا|اهلا|هلا|يا هلا|مرحبا|صباح الخير|مساء الخير|hi|hello|hey|سلام)$/i.test(userMsg)) {
-    await sendTyping(sid); // تفعيل الـ Typing
-    await sleep(1000);
-    await sendButtons(sid, `أهلاً بك يا فندم في وكالة ELAZ.. تحب تتواصل معانا إزاي؟`, [
-        { type: "postback", title: "تحدث مع إيلاز 🤖", payload: "START_AI" },
-        { type: "web_url", title: "خدمة العملاء 👤", url: MY_WHATSAPP_LINK }
-    ]);
-    continue;
-}
-            await sendTyping(sid);
-            const reply = await askGroq(userMsg, name, sid);
-            await sendMsg(sid, reply);
-        }
+        // --- الجزء الخاص بالتعامل مع الرسائل النصية ---
+if (messaging.message && messaging.message.text) {
+    const userMsg = messaging.message.text;
+
+    // 1. لو العميل بعت تحية (يظهر له الاختيارين)
+    if (/^(أهلا|اهلا|هلا|يا هلا|مرحبا|صباح الخير|مساء الخير|hi|hello|hey|سلام)$/i.test(userMsg)) {
+        await sendTyping(sid);
+        await sleep(1000);
+        await sendButtons(sid, `أهلاً بك يا فندم في وكالة ELAZ.. تحب تتواصل معانا إزاي؟`, [
+            { type: "postback", title: "تحدث مع إيلاز 🤖", payload: "START_AI" },
+            { type: "web_url", title: "خدمة العملاء 👤", url: MY_WHATSAPP_LINK }
+        ]);
+        return; // بنوقف هنا عشان ميردش بالـ AI في نفس الوقت
     }
-});
+
+    // 2. لو أي كلام تاني (الذكاء الاصطناعي يرد)
+    await sendTyping(sid);
+    const reply = await askGroq(userMsg, name, sid);
+    await sendMsg(sid, reply);
+}
+
+// --- الجزء الخاص بالتعامل مع دوسات الزراير (Postbacks) ---
+if (messaging.postback) {
+    const p = messaging.postback.payload;
+
+    if (p === 'START_AI') {
+        await sendTyping(sid);
+        await sleep(1000);
+        await sendButtons(sid, `أنا معاك يا فندم، أنا "إيلاز" مساعدك الذكي.. تحب تشوف "الخدمات" اللي بنقدمها ولا عندك استفسار معين؟`, [
+            { type: "postback", title: "الخدمات 📋", payload: "SHOW_SERVICES" }
+        ]);
+    }
+
+    if (p === 'SHOW_SERVICES') {
+        await sendServicesMenu(sid); // دي الدالة اللي بتعرض التصميم والإعلانات
+    }
+}
 
 app.get('/webhook', (req, res) => {
     if (req.query['hub.verify_token'] === VERIFY_TOKEN) res.send(req.query['hub.challenge']);
