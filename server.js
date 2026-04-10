@@ -92,7 +92,7 @@ app.post('/webhook', async (req, res) => {
 
             if (event.message?.text) {
                 const userMsg = event.message.text.toLowerCase();
-                const welcomeRegex = /^(أهلا|اهلا|سلام|hi|hello|hey|ازيك|صباح|مساء|هلو|start|بدء|welcome|??|؟؟)/i;
+                const welcomeRegex = /^(أهلا|اهلا|سلام|hi|hello|hey|ازيك|صباح|مساء|هلو|start|بدء|welcome|؟|\?)/i;
 
                 if (welcomeRegex.test(userMsg)) {
                     await sendWelcomeButtons(sid);
