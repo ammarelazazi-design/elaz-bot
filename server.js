@@ -4,88 +4,110 @@ const axios = require('axios');
 
 const app = express().use(bodyParser.json());
 
-// المتغيرات من ريندر
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN      = process.env.VERIFY_TOKEN;
 const GROQ_API_KEY      = process.env.GROQ_API_KEY;
 const AMMAR_PSID        = process.env.AMMAR_PSID;
-const ZAPIER_WEBHOOK    = process.env.ZAPIER_WEBHOOK;
 
-const SYSTEM_PROMPT = `أنت المساعد الذكي الرسمي لوكالة ELAZ للتسويق الرقمي والذكاء الاصطناعي. صاحب الوكالة هو أستاذ عمار.
+const SYSTEM_PROMPT = `أنت المساعد الذكي لوكالة ELAZ للتسويق (صاحبها أستاذ عمار).
 قواعدك:
-1. ردك بلهجة مصرية بيزنس محترمة، قصيرة، وذكية جداً.
-2. خدماتنا: (تصميم لوجو وهوية بصرية، إعلانات ممولة Media Buying، برمجة بوتات ماسنجر، ودراسات جدوى تسويقية).
-3. ممنوع تأليف أسعار أو عروض وهمية.
-4. عند السؤال عن السعر: "الأسعار بتحدد حسب حجم مشروعك، سيب رقمك وأستاذ عمار هيتواصل معاك فوراً يوضحلك كل الباقات".
-5. ممنوع الكلام في أي موضوع خارج التسويق وخدمات الوكالة.`;
+1. افهم (العربي، الإنجليزي، والفرانكو) ورد بنفس لغة العميل.
+2. تخصصنا: (تصميم جرافيك، إعلانات ممولة، بوتات ذكاء اصطناعي).
+3. لو العميل اختار "التحدث مع الذكاء الاصطناعي"، جاوبه بذكاء في صلب تخصصنا.
+4. لو العميل سأل عن السعر، اطلب رقمه للتواصل.`;
 
-// 1. دالة إظهار علامة "جاري الكتابة"
+// 1. دالة إظهار Typing
 async function sendTyping(sid) {
     try {
         await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
             recipient: { id: sid },
             sender_action: "typing_on"
         });
-    } catch (e) { console.error("Typing error"); }
+    } catch (e) {}
 }
 
-// 2. دالة إرسال الرسالة النهائية
+// 2. دالة إرسال الرسالة الترحيبية مع الأزرار
+async function sendWelcomeMessage(sid) {
+    const welcomeText = "أهلاً بك في وكالة ELAZ للتسويق الرقمي والذكاء الاصطناعي! 🚀\n\nأنا مساعدك الذكي، حابب نبدأ الكلام إزاي؟";
+    const buttons = [
+        { type: "postback", title: "الذكاء الاصطناعي 🤖", payload: "START_AI" },
+        { type: "postback", title: "خدمة العملاء 👤", payload: "TALK_TO_HUMAN" }
+    ];
+    await sendButtons(sid, welcomeText, buttons);
+}
+
+// 3. دالة إرسال الأزرار
+async function sendButtons(sid, text, buttons) {
+    try {
+        await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+            recipient: { id: sid },
+            message: {
+                attachment: {
+                    type: "template",
+                    payload: {
+                        template_type: "button",
+                        text: text,
+                        buttons: buttons
+                    }
+                }
+            }
+        });
+    } catch (e) { console.error("Button error:", e.response?.data); }
+}
+
+// 4. دالة إرسال نص عادي
 async function sendMsg(sid, text) {
     try {
         await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
             recipient: { id: sid },
             message: { text }
         });
-        console.log(`✅ تم الرد على: ${sid}`);
-    } catch (e) { console.error("Send error:", e.response?.data); }
+    } catch (e) {}
 }
 
-// الـ Webhook
 app.post('/webhook', async (req, res) => {
     const body = req.body;
-
     if (body.object === 'page') {
         res.status(200).send('EVENT_RECEIVED');
-
         for (const entry of body.entry) {
             const event = entry.messaging?.[0];
             const sid = event?.sender?.id;
+            if (!sid || event.message?.is_echo || sid === AMMAR_PSID) continue;
 
-            if (!sid || event.message?.is_echo) continue;
-            
-            // تجاهل رسائل عمار (شيل // لو عايز تجذب من حسابك)
-            //if (sid === AMMAR_PSID) continue; 
+            // التعامل مع ضغطات الأزرار (Postbacks)
+            if (event.postback) {
+                const payload = event.postback.payload;
+                if (payload === 'START_AI') {
+                    await sendMsg(sid, "تمام يا فنان! أنا معاك، تحب تعرف إيه عن خدماتنا في الجرافيك أو الإعلانات؟");
+                } else if (payload === 'TALK_TO_HUMAN') {
+                    await sendMsg(sid, "من عينيا! هحولك حالاً لأستاذ عمار أو حد من فريق خدمة العملاء وهيردوا عليك في أسرع وقت. سيب استفسارك هنا.");
+                }
+                continue;
+            }
 
+            // التعامل مع الرسائل النصية
             if (event.message?.text) {
                 const userMsg = event.message.text;
-                
-                // تفعيل علامة الكتابة فوراً
-                await sendTyping(sid);
 
-                try {
-                    // طلب الرد من Groq
-                    const aiRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-                        model: 'llama-3.3-70b-versatile',
-                        messages: [
-                            { role: 'system', content: SYSTEM_PROMPT },
-                            { role: 'user', content: userMsg }
-                        ]
-                    }, { headers: { Authorization: `Bearer ${GROQ_API_KEY}` } });
+                // لو أول مرة يبعت "Get Started" أو كلمة ترحيب
+                if (userMsg.toLowerCase() === 'get_started' || userMsg === 'بدء') {
+                    await sendWelcomeMessage(sid);
+                } else {
+                    await sendTyping(sid);
+                    try {
+                        const aiRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+                            model: 'llama-3.3-70b-versatile',
+                            messages: [
+                                { role: 'system', content: SYSTEM_PROMPT },
+                                { role: 'user', content: userMsg }
+                            ]
+                        }, { headers: { Authorization: `Bearer ${GROQ_API_KEY}` } });
 
-                    const reply = aiRes.data.choices[0].message.content;
-
-                    // تأخير بسيط (ثانيتين) عشان العميل يشوف علامة الكتابة ويحس بواقعية
-                    setTimeout(async () => {
-                        await sendMsg(sid, reply);
-                        
-                        // إرسال لزابير لو اللينك موجود
-                        if (ZAPIER_WEBHOOK) {
-                            axios.post(ZAPIER_WEBHOOK, { customer_id: sid, msg: userMsg, reply: reply }).catch(e => {});
-                        }
-                    }, 2000);
-
-                } catch (err) {
-                    await sendMsg(sid, "ثواني وأستاذ عمار هيرد عليك بكل التفاصيل.");
+                        let reply = aiRes.data.choices[0].message.content;
+                        setTimeout(() => sendMsg(sid, reply), 2000);
+                    } catch (err) {
+                        sendMsg(sid, "ثواني وهرد عليك.");
+                    }
                 }
             }
         }
@@ -98,9 +120,5 @@ app.get('/webhook', (req, res) => {
     } else { res.sendStatus(403); }
 });
 
-app.get('/health', (req, res) => res.send("ELAZ Bot is LIVE! ✅"));
-
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 السيرفر شغال تمام على بورت ${PORT}`);
-});
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 ELAZ Bot LIVE on port ${PORT}`));
