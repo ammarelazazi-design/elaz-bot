@@ -43,7 +43,7 @@ app.post('/webhook', async (req, res) => {
             if (event.message?.is_echo) return;
 
             // 2. تجاهل رسائلك أنت (عمار) عشان ما يحصلش Loop
-            if (!sid || sid === AMMAR_PSID) return;
+            //if (!sid || sid === AMMAR_PSID) return;
 
             if (event.message && event.message.text) {
                 const userMsg = event.message.text;
