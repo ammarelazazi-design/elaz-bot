@@ -11,39 +11,14 @@ const AMMAR_PSID        = process.env.AMMAR_PSID;
 const ZAPIER_WEBHOOK    = process.env.ZAPIER_WEBHOOK;
 
 const MY_WHATSAPP_LINK = "https://wa.me/201201550186"; 
-// ... (باقي الكود من فوق زي ما هو)
 
 const SYSTEM_PROMPT = `أنت المساعد الذكي الرسمي لوكالة ELAZ للتسويق الرقمي والذكاء الاصطناعي.
 قواعدك الصارمة للتعامل:
-1. اللغة: رد باللهجة المصرية "بيزنس" راقية جداً وبصيغة الجمع (إحنا، فريقنا).
-2. الاحترام: يجب استخدام كلمات (حضرتك، يا فندم، اتفضل حضرتك) في كل جملة.
-3. ميزة ضبط النفس: مهما كان أسلوب العميل (حتى لو أخطأ في حق الوكالة أو انفعل)، يجب أن تظل محترماً جداً ومهذباً وبأعلى درجات الرقي.
+1. اللغة: رد باللهجة المصرية "بيزنس" راقية جداً وبصيغة الجمع (إحنا، فريقنا)التحدث بجميع اللغات وحتي الفرانكو.
+2. الاحترام: يجب استخدام كلمات (حضرتك، يا فندم، اتفضل حضرتك) دائماً.
+3. ميزة ضبط النفس: مهما كان أسلوب العميل، يجب أن تظل محترماً جداً ومهذباً وبأعلى درجات الرقي.
 4. التخصص: (تصميم الهوية البصرية، الميديا باينج، برمجة بوتات الذكاء الاصطناعي).
-5. رد الأسعار: "بناءً على احتياجات مشروع حضرتك، بنحدد التكلفة، اتفضل سيب رقم موبايلك وفريقنا هيتواصل مع حضرتك فوراً لتوضيح كل الباقات".`;
-
-// ... 
-
-            if (event.postback) {
-                if (event.postback.payload === 'START_AI') {
-                    await sendTyping(sid);
-                    // التعديل اللي طلبت بالظبط:
-                    setTimeout(() => sendMsg(sid, "إحنا معاك، اتفضل حضرتك حابب تعرف إيه عن خدماتنا في التصميم أو الإعلانات؟"), 1000);
-                }
-                continue;
-            }
-
-// ... (باقي الكود)
-
-            if (event.postback) {
-                if (event.postback.payload === 'START_AI') {
-                    await sendTyping(sid);
-                    // التعديل اللي طلبت بالظبط:
-                    setTimeout(() => sendMsg(sid, "إحنا معاك، اتفضل حضرتك حابب تعرف إيه عن خدماتنا في التصميم أو الإعلانات؟"), 1000);
-                }
-                continue;
-            }
-
-// ... (باقي الكود)
+5. رد الأسعار: "بناءً على احتياجات مشروع حضرتك، بنحدد التكلفة، اتفضل سيب رقم موبايلك وفريقنا هيتواصل مع حضرتك فوراً".`;
 
 async function sendTyping(sid) {
     try {
@@ -54,9 +29,10 @@ async function sendTyping(sid) {
     } catch (e) {}
 }
 
+// تم تصحيح الدالة هنا بإضافة async
 async function sendWelcomeButtons(sid) {
     await sendTyping(sid);
-    const text = "أهلاً بكم في وكالة ELAZ للتسويق الرقمي! 🚀\nحابين تبدأوا الكلام مع مساعدنا الذكي ولا تحولوا لخدمة العملاء؟";
+    const text = "أهلاً بكِ في وكالة ELAZ للتسويق الرقمي! 🚀\nتحب تكمل مع مساعدنا الذكي ولا حابب تتواصل واتساب مع خدمة العملاء؟";
     const buttons = [
         { type: "postback", title: "الذكاء الاصطناعي 🤖", payload: "START_AI" },
         { type: "web_url", title: "خدمة العملاء (واتساب) 👤", url: MY_WHATSAPP_LINK }
@@ -102,19 +78,20 @@ app.post('/webhook', async (req, res) => {
             const event = entry.messaging?.[0];
             const sid = event?.sender?.id;
 
-            //if (!sid || event.message?.is_echo || sid === AMMAR_PSID) continue;
+            if (!sid || event.message?.is_echo || sid === AMMAR_PSID) continue;
 
             if (event.postback) {
                 if (event.postback.payload === 'START_AI') {
                     await sendTyping(sid);
-                    setTimeout(() => sendMsg(sid, "تمام جداً! إحنا معاكم، حابين تعرفوا إيه عن خدماتنا في التصميم أو الإعلانات؟"), 1000);
+                    setTimeout(async () => {
+                        await sendMsg(sid, "إحنا معاك، اتفضل حضرتك حابب تعرف إيه عن خدماتنا في التصميم أو الإعلانات؟");
+                    }, 1000);
                 }
                 continue;
             }
 
             if (event.message?.text) {
                 const userMsg = event.message.text.toLowerCase();
-                // تم إصلاح الـ Regex لمنع أخطاء الـ Deploy
                 const welcomeRegex = /^(أهلا|اهلا|سلام|hi|hello|hey|ازيك|صباح|مساء|هلو|start|بدء|welcome|؟|\?)/i;
 
                 if (welcomeRegex.test(userMsg)) {
@@ -139,7 +116,7 @@ app.post('/webhook', async (req, res) => {
                             }
                         }, 2000);
                     } catch (err) {
-                        sendMsg(sid, "ثواني وفريقنا هيرد عليكم بكل التفاصيل.");
+                        await sendMsg(sid, "ثواني وفريقنا هيرد على حضرتك بكل التفاصيل.");
                     }
                 }
             }
