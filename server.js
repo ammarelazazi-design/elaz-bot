@@ -206,8 +206,9 @@ app.post('/webhook', async (req, res) => {
             const userMsg = event.message.text.trim();
             if (getOrder(sid)) { if (await handleOrderFlow(sid, userMsg, name)) continue; }
             if (/^(أهلا|اهلا|هلا|يا هلا|مرحبا|صباح الخير|مساء الخير|hi|hello|hey|سلام)$/i.test(userMsg)) {
-    await sendButtons(sid, `أهلاً بك يا فندم في وكالة ELAZ.. تحب تبدأ بإيه؟`, [
-        { type: "postback", title: "الخدمات 📋", payload: "SHOW_SERVICES" },
+    await sendTyping(sid); // تفعيل الـ Typing
+    await sleep(1000);
+    await sendButtons(sid, `أهلاً بك يا فندم في وكالة ELAZ.. تحب تتواصل معانا إزاي؟`, [
         { type: "postback", title: "تحدث مع إيلاز 🤖", payload: "START_AI" },
         { type: "web_url", title: "خدمة العملاء 👤", url: MY_WHATSAPP_LINK }
     ]);
