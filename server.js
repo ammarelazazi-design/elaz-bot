@@ -4,15 +4,32 @@ const axios = require('axios');
 
 const app = express().use(bodyParser.json());
 
-// المفاتيح من Render Environment Variables
+// المتغيرات من ريندر
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN      = process.env.VERIFY_TOKEN;
 const GROQ_API_KEY      = process.env.GROQ_API_KEY;
-const AMMAR_PSID        = process.env.AMMAR_PSID; // PSID //بتاعك عشان البوت يتجاهله
+const AMMAR_PSID        = process.env.AMMAR_PSID;
+const ZAPIER_WEBHOOK    = process.env.ZAPIER_WEBHOOK;
 
-// ═══════════════════════════════════════════
-//  دالة إرسال الرسائل لفيسبوك
-// ═══════════════════════════════════════════
+const SYSTEM_PROMPT = `أنت المساعد الذكي الرسمي لوكالة ELAZ للتسويق الرقمي والذكاء الاصطناعي. صاحب الوكالة هو أستاذ عمار.
+قواعدك:
+1. ردك بلهجة مصرية بيزنس محترمة، قصيرة، وذكية جداً.
+2. خدماتنا: (تصميم لوجو وهوية بصرية، إعلانات ممولة Media Buying، برمجة بوتات ماسنجر، ودراسات جدوى تسويقية).
+3. ممنوع تأليف أسعار أو عروض وهمية.
+4. عند السؤال عن السعر: "الأسعار بتحدد حسب حجم مشروعك، سيب رقمك وأستاذ عمار هيتواصل معاك فوراً يوضحلك كل الباقات".
+5. ممنوع الكلام في أي موضوع خارج التسويق وخدمات الوكالة.`;
+
+// 1. دالة إظهار علامة "جاري الكتابة"
+async function sendTyping(sid) {
+    try {
+        await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+            recipient: { id: sid },
+            sender_action: "typing_on"
+        });
+    } catch (e) { console.error("Typing error"); }
+}
+
+// 2. دالة إرسال الرسالة النهائية
 async function sendMsg(sid, text) {
     try {
         await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
@@ -20,76 +37,70 @@ async function sendMsg(sid, text) {
             message: { text }
         });
         console.log(`✅ تم الرد على: ${sid}`);
-    } catch (e) {
-        console.error("❌ فشل الإرسال:", e.response?.data || e.message);
-    }
+    } catch (e) { console.error("Send error:", e.response?.data); }
 }
 
-// ═══════════════════════════════════════════
-//  الـ Webhook الرئيسي (POST)
-// ═══════════════════════════════════════════
+// الـ Webhook
 app.post('/webhook', async (req, res) => {
     const body = req.body;
 
     if (body.object === 'page') {
-        // رد فوري على فيسبوك عشان ما يكررش الطلب
         res.status(200).send('EVENT_RECEIVED');
 
-        body.entry.forEach(async (entry) => {
+        for (const entry of body.entry) {
             const event = entry.messaging?.[0];
             const sid = event?.sender?.id;
 
-            // 1. تجاهل أي رسائل "صدى" طالعة من البوت نفسه
-            if (event.message?.is_echo) return;
+            if (!sid || event.message?.is_echo) continue;
+            
+            // تجاهل رسائل عمار (شيل // لو عايز تجذب من حسابك)
+            //if (sid === AMMAR_PSID) continue; 
 
-            // 2. تجاهل رسائلك أنت (عمار) عشان ما يحصلش Loop
-            //if (!sid || sid === AMMAR_PSID) return;
-
-            if (event.message && event.message.text) {
+            if (event.message?.text) {
                 const userMsg = event.message.text;
-                console.log(`📩 رسالة من عميل (${sid}): ${userMsg}`);
+                
+                // تفعيل علامة الكتابة فوراً
+                await sendTyping(sid);
 
                 try {
-                    // 3. طلب الرد من الذكاء الاصطناعي Groq
+                    // طلب الرد من Groq
                     const aiRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
                         model: 'llama-3.3-70b-versatile',
                         messages: [
-                            { role: 'system', content: 'أنت مساعد وكالة ELAZ للتسويق. رد بلهجة مصرية قصيرة وجذابة.' },
+                            { role: 'system', content: SYSTEM_PROMPT },
                             { role: 'user', content: userMsg }
                         ]
-                    }, { 
-                        headers: { Authorization: `Bearer ${GROQ_API_KEY}` } 
-                    });
+                    }, { headers: { Authorization: `Bearer ${GROQ_API_KEY}` } });
 
                     const reply = aiRes.data.choices[0].message.content;
-                    await sendMsg(sid, reply);
+
+                    // تأخير بسيط (ثانيتين) عشان العميل يشوف علامة الكتابة ويحس بواقعية
+                    setTimeout(async () => {
+                        await sendMsg(sid, reply);
+                        
+                        // إرسال لزابير لو اللينك موجود
+                        if (ZAPIER_WEBHOOK) {
+                            axios.post(ZAPIER_WEBHOOK, { customer_id: sid, msg: userMsg, reply: reply }).catch(e => {});
+                        }
+                    }, 2000);
+
                 } catch (err) {
-                    console.error("❌ خطأ في Groq API");
-                    await sendMsg(sid, "ثواني وهرد عليك بكل التفاصيل يا فنان.");
+                    await sendMsg(sid, "ثواني وأستاذ عمار هيرد عليك بكل التفاصيل.");
                 }
             }
-        });
-    } else {
-        res.sendStatus(404);
-    }
+        }
+    } else { res.sendStatus(404); }
 });
 
-// ═══════════════════════════════════════════
-//  التحقق من الـ Webhook (GET)
-// ═══════════════════════════════════════════
 app.get('/webhook', (req, res) => {
     if (req.query['hub.verify_token'] === VERIFY_TOKEN) {
         res.status(200).send(req.query['hub.challenge']);
-    } else {
-        res.sendStatus(403);
-    }
+    } else { res.sendStatus(403); }
 });
 
-// نقطة مراقبة الحالة
 app.get('/health', (req, res) => res.send("ELAZ Bot is LIVE! ✅"));
 
-// تشغيل السيرفر
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server is running on port ${PORT}`);
+    console.log(`🚀 السيرفر شغال تمام على بورت ${PORT}`);
 });
