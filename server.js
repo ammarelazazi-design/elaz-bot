@@ -10,7 +10,7 @@ const GROQ_API_KEY      = process.env.GROQ_API_KEY;
 const AMMAR_PSID        = process.env.AMMAR_PSID;
 const ZAPIER_WEBHOOK    = process.env.ZAPIER_WEBHOOK;
 
-const MY_WHATSAPP_LINK = "https://wa.me/201201550186";
+const MY_WHATSAPP_LINK = "https://wa.me/201557963125";
 
 // ═══════════════════════════════════════════
 //  حفظ سياق المحادثة
