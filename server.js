@@ -13,9 +13,6 @@ const ZAPIER_WEBHOOK    = process.env.ZAPIER_WEBHOOK;
 const MY_WHATSAPP_LINK = "https://wa.me/201557963125";
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-// ═══════════════════════════════════════════
-// حفظ سياق المحادثة وأسماء العملاء
-// ═══════════════════════════════════════════
 const conversations = new Map();
 const nameCache = new Map();
 
@@ -24,25 +21,21 @@ function getHistory(psid) { return conversations.get(psid) || []; }
 function addToHistory(psid, role, content) {
     const history = getHistory(psid);
     history.push({ role, content });
-    if (history.length > 8) history.splice(0, 2);
+    if (history.length > 6) history.splice(0, 2);
     conversations.set(psid, history);
 }
 
 // ═══════════════════════════════════════════
-// التعليمات الصارمة للبوت (System Prompt)
+// تحديث الـ Prompt: "ممنوع الرغي"
 // ═══════════════════════════════════════════
-const SYSTEM_PROMPT = `أنت المساعد الذكي الرسمي لوكالة ELAZ للتسويق الرقمي.
-قواعدك الصارمة:
-1. اللغة: لهجة مصرية "بيزنس" راقية جداً ومفهومة.
-2. التخصص: أنت خبير فقط في (التصميم البصري، الميديا باينج، برمجة بوتات الذكاء الاصطناعي، وتطوير المواقع).
-3. منع الدردشة العامة: إذا سألك العميل عن أي موضوع خارج التخصص (أفلام، طبخ، أخبار)، اعتذر برقي: "يا فندم، أنا متخصص في خدمات وكالة ELAZ الرقمية فقط، وأقدر أساعد حضرتك في تطوير مشروعك من خلال خدماتنا."
-4. الاحترام: استخدم (يا فندم، حضرتك) في كل جملة.
-5. صيغة الوكالة: تحدث دائماً بـ "إحنا، فريقنا، وكالتنا".
-6. رد الأسعار: "بناءً على احتياجات مشروع حضرتك، بنحدد التكلفة، اتفضل سيب رقم موبايلك وفريقنا هيتواصل مع حضرتك فوراً".`;
+const SYSTEM_PROMPT = `أنت المساعد الذكي لوكالة ELAZ.
+القواعد:
+1. الرد مصري بيزنس، "جملة واحدة أو جملتين بالظبط". ممنوع الرغي نهائياً.
+2. التخصص: تصميم، إعلانات، بوتات، مواقع.
+3. الاحترام: (يا فندم، حضرتك).
+4. أي سؤال بره الشغل، رد بـ: "بعتذر لحضرتك يا فندم، أنا متخصص في خدمات وكالة ELAZ فقط، أقدر أساعد حضرتك في مشروعك؟"
+5. السعر: سيب رقمك وفريقنا هيكلمك.`;
 
-// ═══════════════════════════════════════════
-// الدوال المساعدة
-// ═══════════════════════════════════════════
 async function getUserInfo(psid) {
     if (nameCache.has(psid)) return nameCache.get(psid);
     try {
@@ -64,7 +57,7 @@ async function sendMsg(sid, text) {
     try {
         await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
             { recipient: { id: sid }, message: { text } });
-    } catch (e) { console.error("❌ sendMsg error:", e.response?.data); }
+    } catch (e) {}
 }
 
 async function sendButtons(sid, text, buttons) {
@@ -77,94 +70,63 @@ async function sendButtons(sid, text, buttons) {
 }
 
 // ═══════════════════════════════════════════
-// رسالة الترحيب بالأزرار
+// الردود الجاهزة والمنيو
 // ═══════════════════════════════════════════
 async function sendWelcomeButtons(sid, name) {
     await sendTyping(sid);
-    await sleep(1000);
-    await sendButtons(sid,
-        `أهلاً بحضرتك يا ${name} في وكالة ELAZ للتسويق الرقمي! 🚀\nتحب تكمل مع مساعدنا الذكي ولا تتواصل مع خدمة العملاء مباشرة؟`,
-        [
-            { type: "postback", title: "الذكاء الاصطناعي 🤖", payload: "START_AI" },
-            { type: "web_url", title: "خدمة العملاء (واتساب) 👤", url: MY_WHATSAPP_LINK }
-        ]
-    );
+    const text = `أهلاً بحضرتك يا ${name} في ELAZ! 🚀\nتحب تكمل مع المساعد الذكي ولا واتساب؟`;
+    const buttons = [
+        { type: "postback", title: "الذكاء الاصطناعي 🤖", payload: "START_AI" },
+        { type: "web_url", title: "واتساب مباشر 👤", url: MY_WHATSAPP_LINK }
+    ];
+    await sendButtons(sid, text, buttons);
 }
 
-// ═══════════════════════════════════════════
-// قائمة الخدمات (Quick Replies)
-// ═══════════════════════════════════════════
 async function sendServicesMenu(sid, name) {
     await sendTyping(sid);
-    await sleep(800);
     try {
         await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
             recipient: { id: sid },
             message: {
-                text: `اتفضل يا ${name}، اختار الخدمة اللي تهمك 👇`,
+                text: `اتفضل يا ${name}، خدماتنا المتاحة:`,
                 quick_replies: [
                     { content_type: "text", title: "🎨 تصميم بصري", payload: "SRV_DESIGN" },
                     { content_type: "text", title: "📢 إعلانات ممولة", payload: "SRV_ADS" },
                     { content_type: "text", title: "🤖 بوتات ذكاء", payload: "SRV_BOTS" },
-                    { content_type: "text", title: "🌐 مواقع ويب", payload: "SRV_WEB" },
-                    { content_type: "text", title: "💰 الأسعار", payload: "SRV_PRICE" }
+                    { content_type: "text", title: "🌐 مواقع ويب", payload: "SRV_WEB" }
                 ]
             }
         });
-    } catch (e) { await sendMsg(sid, `خدماتنا: تصميم بصري، إعلانات ممولة، بوتات ذكاء اصطناعي، مواقع ويب. أيهم يهم حضرتك؟`); }
+    } catch (e) {}
 }
 
-// ═══════════════════════════════════════════
-// ردود الخدمات الجاهزة
-// ═══════════════════════════════════════════
 const serviceReplies = {
-    SRV_DESIGN: `🎨 خدمة التصميم البصري:\nإحنا بنصمم هوية بصرية كاملة للبراند حضرتك تشمل:\n- لوجو احترافي\n- بروفايل شركة\n- تصاميم سوشيال ميديا\n- مطبوعات بكل أنواعها\n\nاتفضل سيب رقمك وفريقنا يتواصل مع حضرتك فوراً 📞`,
-    SRV_ADS: `📢 خدمة الإعلانات الممولة:\nإحنا بنوصل رسالتك للعميل الصح بأقل تكلفة:\n- فيسبوك وإنستجرام\n- جوجل ويوتيوب\n- إدارة كاملة للحملات\n- تقارير دورية بالنتائج\n\nاتفضل سيب رقمك وفريقنا يتواصل مع حضرتك فوراً 📞`,
-    SRV_BOTS: `🤖 خدمة بوتات الذكاء الاصطناعي:\nزي البوت اللي بتكلمه دلوقتي!\nبنعمل بوتات:\n- ماسنجر وواتساب\n- ردود ذكية 24/7\n- ربط مع أنظمة البيع\n- لوحة تحكم كاملة\n\nاتفضل سيب رقمك وفريقنا يتواصل مع حضرتك فوراً 📞`,
-    SRV_WEB: `🌐 خدمة تطوير المواقع:\nبنعمل مواقع احترافية:\n- سريعة ومتوافقة مع الموبايل\n- متوافقة مع SEO\n- لوحة تحكم سهلة\n- دومين وهوستنج\n\nاتفضل سيب رقمك وفريقنا يتواصل مع حضرتك فوراً 📞`,
-    SRV_PRICE: `💰 الأسعار:\nبناءً على احتياجات مشروع حضرتك، بنحدد التكلفة المناسبة.\n\nاتفضل سيب رقم موبايلك وفريقنا هيتواصل مع حضرتك فوراً ويعمل عرض سعر مخصص 📞`
+    SRV_DESIGN: `🎨 إحنا بنصمم هوية بصرية كاملة (لوجو، سوشيال ميديا، مطبوعات).\nسيب رقمك وفريقنا هيتواصل معاك فوراً.`,
+    SRV_ADS: `📢 بنعمل حملات احترافية على فيسبوك وجوجل بأعلى نتايج.\nسيب رقمك وهنبعتلك التفاصيل.`,
+    SRV_BOTS: `🤖 بنبرمج بوتات ذكية (ماسنجر وواتساب) للرد الآلي 24/7.\nسيب رقمك وهنتواصل معاك.`,
+    SRV_WEB: `🌐 بنبني مواقع ويب سريعة واحترافية متوافقة مع جوجل.\nسيب رقمك وهنكلمك.`
 };
 
 // ═══════════════════════════════════════════
-// تنبيه عمار + Zapier
-// ═══════════════════════════════════════════
-function notifyAmmar(name, msg, psid) {
-    if (AMMAR_PSID) sendMsg(AMMAR_PSID, `🚨 عميل محتاج تواصل:\nالاسم: ${name}\nالرسالة: "${msg}"`);
-    if (ZAPIER_WEBHOOK) axios.post(ZAPIER_WEBHOOK, {
-        name, msg, psid, time: new Date().toLocaleString('ar-EG')
-    }).catch(() => {});
-}
-
-// ═══════════════════════════════════════════
-// الذكاء الاصطناعي (Groq)
+// الذكاء الاصطناعي (مختصر جداً)
 // ═══════════════════════════════════════════
 async function askGroq(userMsg, name, psid) {
     addToHistory(psid, 'user', userMsg);
     try {
         const res = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
             model: 'llama-3.3-70b-versatile',
-            max_tokens: 250,
+            max_tokens: 100, // تقليل التوكنز جداً لإجباره على الاختصار
             temperature: 0.1,
-            messages: [
-                { role: 'system', content: `${SYSTEM_PROMPT}\nاسم العميل: ${name}` },
-                ...getHistory(psid)
-            ]
+            messages: [{ role: 'system', content: `${SYSTEM_PROMPT}\nاسم العميل: ${name}` }, ...getHistory(psid)]
         }, { headers: { Authorization: `Bearer ${GROQ_API_KEY}` } });
-
-        const reply = res.data.choices[0].message.content;
+        const reply = res.data.choices[0].message.content.trim();
         addToHistory(psid, 'assistant', reply);
         return reply;
-    } catch (e) {
-        console.error("❌ Groq error:", e.response?.data || e.message);
-        return `يا فندم، إحنا معاك، ثواني وفريقنا في ELAZ هيرد على حضرتك بكل التفاصيل.`;
-    }
+    } catch (e) { return `يا فندم ثواني وهنرد عليك بكل التفاصيل.`; }
 }
 
-// ═══════════════════════════════════════════
-// Webhook الرئيسي
-// ═══════════════════════════════════════════
-const welcomeRegex = /^(أهلا|اهلا|سلام|hi|hello|hey|ازيك|صباح|مساء|هلو|start|بدء|welcome|مرحبا)/i;
-const buyRegex = /سعر|بكام|تكلفة|عرض|ازاي نبدأ|باكدج|موبايل|رقم|تواصل/i;
+const welcomeRegex = /^(أهلا|اهلا|سلام|hi|hello|hey|start|بدء|welcome)/i;
+const buyRegex = /سعر|بكام|تكلفة|عرض|موبايل|رقم/i;
 
 app.post('/webhook', async (req, res) => {
     if (req.body.object !== 'page') return res.sendStatus(404);
@@ -173,78 +135,42 @@ app.post('/webhook', async (req, res) => {
     for (const entry of req.body.entry) {
         const event = entry.messaging?.[0];
         const sid = event?.sender?.id;
-
         if (!sid || event.message?.is_echo) continue;
 
         const name = await getUserInfo(sid);
 
-        // ─── Postback (أزرار) ───
         if (event.postback) {
             const payload = event.postback.payload;
-            if (payload === 'GET_STARTED') {
-                await sendWelcomeButtons(sid, name);
-            } else if (payload === 'START_AI') {
-                await sendServicesMenu(sid, name);
-            } else if (serviceReplies[payload]) {
-                await sendTyping(sid);
-                await sleep(800);
-                await sendMsg(sid, serviceReplies[payload]);
-                if (buyRegex.test(serviceReplies[payload])) notifyAmmar(name, payload, sid);
-            }
+            if (payload === 'GET_STARTED') await sendWelcomeButtons(sid, name);
+            else if (payload === 'START_AI') await sendServicesMenu(sid, name);
             continue;
         }
 
-        // ─── رسالة نصية ───
         if (event.message?.text) {
             const userMsg = event.message.text;
+            const quickPayload = event.message.quick_reply?.payload;
 
-            // كشف نية الشراء
-            if (buyRegex.test(userMsg)) notifyAmmar(name, userMsg, sid);
+            if (quickPayload && serviceReplies[quickPayload]) {
+                await sendMsg(sid, serviceReplies[quickPayload]);
+                continue;
+            }
 
-            // ترحيب
-            if (welcomeRegex.test(userMsg.trim())) {
+            if (welcomeRegex.test(userMsg.trim()) && userMsg.length < 10) {
                 await sendWelcomeButtons(sid, name);
                 continue;
             }
 
-            // رد الـ AI
             await sendTyping(sid);
             const reply = await askGroq(userMsg, name, sid);
-            await sleep(500);
             await sendMsg(sid, reply);
         }
     }
 });
 
-// ─── Webhook Verification ───
 app.get('/webhook', (req, res) => {
     if (req.query['hub.verify_token'] === VERIFY_TOKEN) res.send(req.query['hub.challenge']);
     else res.sendStatus(403);
 });
 
-app.get('/health', (req, res) => res.json({ status: 'ok', agency: 'ELAZ' }));
-
-// ─── إعداد واجهة الصفحة ───
-async function setupMessengerProfile() {
-    try {
-        await axios.post(`https://graph.facebook.com/v19.0/me/messenger_profile?access_token=${PAGE_ACCESS_TOKEN}`, {
-            get_started: { payload: 'GET_STARTED' },
-            greeting: [{ locale: 'default', text: 'أهلاً بحضرتك في وكالة ELAZ 🚀\nاضغط على (بدء الاستخدام) للتعرف على خدماتنا.' }],
-            persistent_menu: [{
-                locale: 'default',
-                composer_input_disabled: false,
-                call_to_actions: [
-                    { type: 'postback', title: '📋 خدماتنا', payload: 'START_AI' },
-                    { type: 'web_url', title: '💬 واتساب', url: MY_WHATSAPP_LINK }
-                ]
-            }]
-        });
-        console.log('✅ تم ضبط واجهة الصفحة بنجاح');
-    } catch (e) { console.error('❌ فشل ضبط الواجهة:', e.message); }
-}
-
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 ELAZ System is LIVE!`);
-    setupMessengerProfile();
-});
+app.listen(PORT, '0.0.0.0', () => { console.log(`🚀 ELAZ LIVE!`); });
