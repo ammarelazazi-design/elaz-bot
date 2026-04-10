@@ -24,14 +24,17 @@ function addToHistory(psid, role, content) {
     conversations.set(psid, history);
 }
 
-const SYSTEM_PROMPT = `أنت المساعد الذكي الرسمي لوكالة ELAZ للتسويق الرقمي والذكاء الاصطناعي.
-قواعدك الصارمة للتعامل:
-1. اللغة: رد باللهجة المصرية "بيزنس" راقية جداً وبصيغة الجمع (إحنا، فريقنا). تتحدث بجميع اللغات وحتى الفرانكو.
-2. الاحترام: يجب استخدام كلمات (حضرتك، يا فندم، اتفضل حضرتك) دائماً.
-3. ضبط النفس: مهما كان أسلوب العميل، يجب أن تظل محترماً جداً ومهذباً وبأعلى درجات الرقي.
-4. التخصص: تصميم الهوية البصرية، الميديا باينج، برمجة بوتات الذكاء الاصطناعي، تطوير المواقع.
+// ═══════════════════════════════════════════
+// تحديث الـ Prompt ليكون أكثر صرامة وتخصصاً
+// ═══════════════════════════════════════════
+const SYSTEM_PROMPT = `أنت المساعد الذكي الرسمي والوحيد لوكالة ELAZ للتسويق الرقمي.
+قواعدك الصارمة التي لا تقبل النقاش:
+1. التخصص فقط: أنت خبير في (تصميم الهوية البصرية، الميديا باينج، برمجة بوتات الذكاء الاصطناعي، تطوير المواقع).
+2. رفض المواضيع الجانبية: إذا سألك العميل عن أي شيء خارج تخصص الوكالة (مثل الأفلام، الطبخ، أخبار، أو دردشة عامة)، اعتذر برقي وقول: "يا فندم، أنا متخصص في خدمات وكالة ELAZ للتسويق الرقمي فقط، وأقدر أساعد حضرتك في تطوير مشروعك من خلال خدماتنا المتاحة."
+3. اللهجة: مصرية "بيزنس" راقية جداً وبصيغة الجمع (إحنا، فريقنا).
+4. الاحترام: (حضرتك، يا فندم) في كل جملة.
 5. رد الأسعار: "بناءً على احتياجات مشروع حضرتك، بنحدد التكلفة، اتفضل سيب رقم موبايلك وفريقنا هيتواصل مع حضرتك فوراً".
-6. الرد دايماً مختصر (3-4 جمل بحد أقصى).`;
+6. الاختصار: ردودك لا تتعدى 3 جمل.`;
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -71,7 +74,6 @@ async function sendButtons(sid, text, buttons) {
             }
         });
     } catch (e) {
-        console.error("❌ Button error:", e.response?.data);
         await sendMsg(sid, text);
     }
 }
@@ -89,7 +91,6 @@ async function sendWelcomeButtons(sid, name) {
 }
 
 function notifyAmmar(name, msg, psid) {
-    if (AMMAR_PSID) sendMsg(AMMAR_PSID, `🚨 عميل محتاج تواصل:\nالاسم: ${name}\nالرسالة: "${msg}"`);
     if (ZAPIER_WEBHOOK) axios.post(ZAPIER_WEBHOOK, {
         name, msg, psid, time: new Date().toLocaleString('ar-EG')
     }).catch(() => {});
@@ -101,6 +102,7 @@ async function askGroq(userMsg, name, psid) {
         const res = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
             model: 'llama-3.3-70b-versatile',
             max_tokens: 300,
+            temperature: 0.3, // تقليل الـ temperature يخلي البوت "عاقل" وما يألفش
             messages: [
                 { role: 'system', content: `${SYSTEM_PROMPT}\nاسم العميل: ${name}` },
                 ...getHistory(psid)
@@ -111,7 +113,6 @@ async function askGroq(userMsg, name, psid) {
         addToHistory(psid, 'assistant', reply);
         return reply;
     } catch (e) {
-        console.error("❌ Groq error:", e.response?.data || e.message);
         return `إحنا معاك يا ${name}، ثواني وفريقنا هيرد على حضرتك بكل التفاصيل 🙏`;
     }
 }
@@ -138,14 +139,13 @@ app.post('/webhook', async (req, res) => {
             } else if (payload === 'START_AI') {
                 await sendTyping(sid);
                 await sleep(1000);
-                await sendMsg(sid, `إحنا معاك يا ${name}، اتفضل حضرتك حابب تعرف إيه عن خدماتنا؟`);
+                await sendMsg(sid, `إحنا معاك يا ${name}، اتفضل حضرتك حابب تعرف إيه عن خدماتنا في التصميم أو الإعلانات؟`);
             }
             continue;
         }
 
         if (event.message?.text) {
             const userMsg = event.message.text;
-
             if (buyRegex.test(userMsg)) notifyAmmar(name, userMsg, sid);
 
             if (welcomeRegex.test(userMsg.trim())) {
@@ -167,18 +167,7 @@ app.get('/webhook', (req, res) => {
 
 app.get('/health', (req, res) => res.json({ status: 'ok', agency: 'ELAZ' }));
 
-async function setupMessengerProfile() {
-    try {
-        await axios.post(`https://graph.facebook.com/v19.0/me/messenger_profile?access_token=${PAGE_ACCESS_TOKEN}`, {
-            get_started: { payload: 'GET_STARTED' },
-            greeting: [{ locale: 'default', text: 'أهلاً بحضرتك في وكالة ELAZ 🚀\nاضغط على (بدء الاستخدام) للتعرف على خدماتنا.' }]
-        });
-        console.log('✅ تم ضبط واجهة الصفحة بنجاح');
-    } catch (e) { console.error('❌ فشل ضبط الواجهة:', e.message); }
-}
-
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 ELAZ System is LIVE on port ${PORT}`);
-    setupMessengerProfile();
+    console.log(`🚀 ELAZ System is LIVE!`);
 });
