@@ -8,7 +8,7 @@ const app = express().use(bodyParser.json());
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN      = process.env.VERIFY_TOKEN;
 const GROQ_API_KEY      = process.env.GROQ_API_KEY;
-const AMMAR_PSID        = process.env.AMMAR_PSID; // PSID بتاعك عشان البوت يتجاهله
+const AMMAR_PSID        = process.env.AMMAR_PSID; // PSID //بتاعك عشان البوت يتجاهله
 
 // ═══════════════════════════════════════════
 //  دالة إرسال الرسائل لفيسبوك
