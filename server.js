@@ -13,7 +13,7 @@ const ZAPIER_WEBHOOK    = process.env.ZAPIER_WEBHOOK;
 const MY_WHATSAPP_LINK = "https://wa.me/201201550186";
 
 // ═══════════════════════════════════════════
-//  حفظ سياق المحادثة (كان ناقص خالص)
+//  حفظ سياق المحادثة
 // ═══════════════════════════════════════════
 const conversations = new Map();
 const nameCache = new Map();
@@ -28,7 +28,7 @@ function addToHistory(psid, role, content) {
 }
 
 // ═══════════════════════════════════════════
-//  System Prompt
+//  System Prompt (الوكالة المحترفة)
 // ═══════════════════════════════════════════
 const SYSTEM_PROMPT = `أنت المساعد الذكي الرسمي لوكالة ELAZ للتسويق الرقمي والذكاء الاصطناعي.
 قواعدك الصارمة للتعامل:
@@ -40,7 +40,7 @@ const SYSTEM_PROMPT = `أنت المساعد الذكي الرسمي لوكال�
 6. الرد دايماً مختصر (3-4 جمل بحد أقصى).`;
 
 // ═══════════════════════════════════════════
-//  جلب اسم العميل
+//  جلب اسم العميل (مع معالجة الأخطاء)
 // ═══════════════════════════════════════════
 async function getUserInfo(psid) {
     if (nameCache.has(psid)) return nameCache.get(psid);
@@ -49,7 +49,9 @@ async function getUserInfo(psid) {
         const name = res.data.first_name || 'يا فندم';
         nameCache.set(psid, name);
         return name;
-    } catch (e) { return 'يا فندم'; }
+    } catch (e) { 
+        return 'يا فندم'; 
+    }
 }
 
 // ═══════════════════════════════════════════
@@ -91,21 +93,21 @@ async function sendButtons(sid, text, buttons) {
 // ═══════════════════════════════════════════
 async function sendWelcomeButtons(sid, name) {
     await sendTyping(sid);
-    await new Promise(r => setTimeout(r, 1000));
-    await sendButtons(sid,
-        `أهلاً بحضرتك يا ${name} في وكالة ELAZ للتسويق الرقمي! 🚀\nتحب تكمل مع مساعدنا الذكي ولا تتواصل مع خدمة العملاء مباشرة؟`,
-        [
-            { type: "postback", title: "الذكاء الاصطناعي 🤖", payload: "START_AI" },
-            { type: "web_url", title: "خدمة العملاء (واتساب) 👤", url: MY_WHATSAPP_LINK }
-        ]
-    );
+    const text = `أهلاً بحضرتك يا ${name} في وكالة ELAZ للتسويق الرقمي! 🚀\nتحب تكمل مع مساعدنا الذكي ولا تتواصل مع خدمة العملاء مباشرة؟`;
+    const buttons = [
+        { type: "postback", title: "الذكاء الاصطناعي 🤖", payload: "START_AI" },
+        { type: "web_url", title: "خدمة العملاء (واتساب) 👤", url: MY_WHATSAPP_LINK }
+    ];
+    
+    setTimeout(async () => {
+        await sendButtons(sid, text, buttons);
+    }, 1000);
 }
 
 // ═══════════════════════════════════════════
-//  تنبيه عمار
+//  تنبيه الإدارة (Zapier)
 // ═══════════════════════════════════════════
 function notifyAmmar(name, msg, psid) {
-    //if (AMMAR_PSID) sendMsg(AMMAR_PSID, `🚨 عميل محتاج تواصل:\nالاسم: ${name}\nالرسالة: "${msg}"`);
     if (ZAPIER_WEBHOOK) axios.post(ZAPIER_WEBHOOK, {
         name, msg, psid, time: new Date().toLocaleString('ar-EG')
     }).catch(() => {});
@@ -130,15 +132,14 @@ async function askGroq(userMsg, name, psid) {
         addToHistory(psid, 'assistant', reply);
         return reply;
     } catch (e) {
-        console.error("❌ Groq error:", e.response?.data || e.message);
-        return `ثواني يا ${name} وفريقنا هيرد على حضرتك بكل التفاصيل 🙏`;
+        return `إحنا معاك يا ${name}، ثواني وفريقنا هيرد على حضرتك بكل التفاصيل 🙏`;
     }
 }
 
 // ═══════════════════════════════════════════
 //  Webhook الرئيسي
 // ═══════════════════════════════════════════
-const welcomeRegex = /^(أهلا|اهلا|سلام|hi|hello|hey|ازيك|صباح|مساء|هلو|start|بدء|welcome)/i;
+const welcomeRegex = /^(أهلا|اهلا|سلام|hi|hello|hey|ازيك|صباح|مساء|هلو|start|بدء|welcome|؟|\?)/i;
 const buyRegex = /سعر|بكام|تكلفة|عرض|ازاي نبدأ|باكدج|موبايل|رقم/i;
 
 app.post('/webhook', async (req, res) => {
@@ -149,20 +150,20 @@ app.post('/webhook', async (req, res) => {
         const event = entry.messaging?.[0];
         const sid = event?.sender?.id;
 
-        // تجاهل الـ echo ورسائل عمار
-        if (!sid || event.message?.is_echo || sid === AMMAR_PSID) continue;
+        if (!sid || event.message?.is_echo) continue;
 
         const name = await getUserInfo(sid);
 
         // ─── Postback (أزرار) ───
         if (event.postback) {
             const payload = event.postback.payload;
-            if (payload === 'GET_STARTED' || payload === 'START_ELAZ') {
+            if (payload === 'GET_STARTED' || payload === 'START_AI_WELCOME') {
                 await sendWelcomeButtons(sid, name);
             } else if (payload === 'START_AI') {
                 await sendTyping(sid);
-                await new Promise(r => setTimeout(r, 1000));
-                await sendMsg(sid, `إحنا معاك يا ${name}، اتفضل حضرتك حابب تعرف إيه عن خدماتنا؟`);
+                setTimeout(async () => {
+                    await sendMsg(sid, `إحنا معاك يا ${name}، اتفضل حضرتك حابب تعرف إيه عن خدماتنا في التصميم أو الإعلانات؟`);
+                }, 1000);
             }
             continue;
         }
@@ -171,26 +172,16 @@ app.post('/webhook', async (req, res) => {
         if (event.message?.text) {
             const userMsg = event.message.text;
 
-            // كشف نية الشراء وتنبيه عمار
             if (buyRegex.test(userMsg)) notifyAmmar(name, userMsg, sid);
 
-            // رسالة ترحيب
             if (welcomeRegex.test(userMsg.trim())) {
                 await sendWelcomeButtons(sid, name);
-                continue;
-            }
-
-            // رد الـ AI مع السياق
-            await sendTyping(sid);
-            const reply = await askGroq(userMsg, name, sid);
-            await sendMsg(sid, reply);
-
-            // إرسال لـ Zapier
-            if (ZAPIER_WEBHOOK) {
-                axios.post(ZAPIER_WEBHOOK, {
-                    name, msg: userMsg, reply, psid: sid,
-                    time: new Date().toLocaleString('ar-EG')
-                }).catch(() => {});
+            } else {
+                await sendTyping(sid);
+                const reply = await askGroq(userMsg, name, sid);
+                setTimeout(async () => {
+                    await sendMsg(sid, reply);
+                }, 1500);
             }
         }
     }
@@ -202,21 +193,20 @@ app.get('/webhook', (req, res) => {
     else res.sendStatus(403);
 });
 
-// ─── Health Check ───
-app.get('/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
+app.get('/health', (req, res) => res.json({ status: 'ok', agency: 'ELAZ' }));
 
 // ─── إعداد واجهة الصفحة ───
 async function setupMessengerProfile() {
     try {
         await axios.post(`https://graph.facebook.com/v19.0/me/messenger_profile?access_token=${PAGE_ACCESS_TOKEN}`, {
             get_started: { payload: 'GET_STARTED' },
-            greeting: [{ locale: 'default', text: 'أهلاً بحضرتك في وكالة ELAZ 🚀\nدوس على (بدء الاستخدام) وخلينا نبدأ.' }]
+            greeting: [{ locale: 'default', text: 'أهلاً بحضرتك في وكالة ELAZ 🚀\nاضغط على (بدء الاستخدام) للتعرف على خدماتنا.' }]
         });
-        console.log('✅ تم ضبط واجهة الصفحة بنجاح');
-    } catch (e) { console.error('❌ فشل ضبط الواجهة:', e.message); }
+    } catch (e) {}
 }
 
-app.listen(process.env.PORT || 3000, '0.0.0.0', () => {
-    console.log('🚀 ELAZ Bot is LIVE!');
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 ELAZ System is LIVE on port ${PORT}`);
     setupMessengerProfile();
 });
