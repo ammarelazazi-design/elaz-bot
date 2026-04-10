@@ -78,7 +78,7 @@ app.post('/webhook', async (req, res) => {
             const event = entry.messaging?.[0];
             const sid = event?.sender?.id;
 
-            if (!sid || event.message?.is_echo || sid === AMMAR_PSID) continue;
+           // if (!sid || event.message?.is_echo || sid === AMMAR_PSID) continue;
 
             // تنفيذ ضغطات الأزرار
             if (event.postback) {
