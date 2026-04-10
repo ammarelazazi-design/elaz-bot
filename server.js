@@ -299,3 +299,36 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 ELAZ AI System — LIVE on port ${PORT}`);
     setupMessengerProfile();
 });
+
+
+// ── Health Check ──
+app.get('/health', (req, res) => res.json({
+    status: 'ok',
+    agency: 'ELAZ',
+    uptime: Math.floor(process.uptime()) + 's',
+    users: nameCache.size
+}));
+
+// ── إعداد واجهة الصفحة ──
+async function setupMessengerProfile() {
+    try {
+        await axios.post(`https://graph.facebook.com/v19.0/me/messenger_profile?access_token=${PAGE_ACCESS_TOKEN}`, {
+            get_started: { payload: 'GET_STARTED' },
+            greeting: [{
+                locale: 'default',
+                text: '👋 أهلاً بحضرتك في وكالة ELAZ للتسويق الرقمي!\nإحنا بنبني براندات مميزة وحملات تحقق نتايج حقيقية.\n\nاضغط "بدء الاستخدام" وخلينا نبدأ 🚀'
+            }],
+            persistent_menu: [{
+                locale: 'default',
+                composer_input_disabled: false,
+                call_to_actions: [
+                    { type: 'postback', title: '📋 خدماتنا',      payload: 'SHOW_SERVICES' },
+                    { type: 'web_url',  title: '💬 واتساب مباشر', url: MY_WHATSAPP_LINK    }
+                ]
+            }]
+        });
+        console.log('✅ Messenger Profile configured');
+    } catch (e) { console.error('❌ Profile setup failed:', e.message); }
+}
+
+setupMessengerProfile();
