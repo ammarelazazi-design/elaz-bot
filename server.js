@@ -10,16 +10,16 @@ const GROQ_API_KEY      = process.env.GROQ_API_KEY;
 const AMMAR_PSID        = process.env.AMMAR_PSID;
 const ZAPIER_WEBHOOK    = process.env.ZAPIER_WEBHOOK;
 
-// رقم الواتساب بتاعك (اكتبه بالصيغة الدولية بدون أصفار أو +)
-// مثال: 2010xxxxxxxx
-const MY_WHATSAPP_LINK = "https://wa.me/201557963125"; 
+const MY_WHATSAPP_LINK = "https://wa.me/201201550186"; 
 
-const SYSTEM_PROMPT = `أنت المساعد الذكي الرسمي لوكالة ELAZ للتسويق. صاحب الوكالة هو أستاذ عمار.
-قواعدك:
-1. رد باللهجة المصرية فقط. افهم الفرانكو ورد مصري.
-2. تخصصنا: (تصميم جرافيك، إعلانات ممولة، بوتات ذكاء اصطناعي).
-3. ممنوع تأليف أسعار أو عروض وهمية.
-4. لو سأل عن السعر، قوله "الأسعار بتختلف حسب المشروع، سيب رقمك وعمار هيكلمك".`;
+// تعليمات الوكالة (بصيغة الجمع)
+const SYSTEM_PROMPT = `أنت المساعد الذكي الرسمي لوكالة ELAZ للتسويق الرقمي والذكاء الاصطناعي.
+قواعدك الصارمة:
+1. اللغة: رد باللهجة المصرية "بيزنس" محترمة وبصيغة الجمع (إحنا، فريقنا، خدماتنا).
+2. التخصص: (تصميم الهوية البصرية، الميديا باينج، برمجة بوتات الذكاء الاصطناعي).
+3. ممنوع تماماً ذكر "أنا" أو "عمار" كشخص منفرد، اتكلم دايماً باسم الوكالة.
+4. لو سأل عن السعر: "بنحدد التكلفة بناءً على احتياجات مشروعكم، سيبوا رقمكم وفريقنا هيتواصل معاكم فوراً".
+5. ممنوع تأليف أي عروض مش موجودة.`;
 
 async function sendTyping(sid) {
     try {
@@ -30,16 +30,14 @@ async function sendTyping(sid) {
     } catch (e) {}
 }
 
-// دالة الأزرار المحدثة بلينك الواتساب
 async function sendWelcomeButtons(sid) {
     await sendTyping(sid);
-    const text = "أهلاً بيك في وكالة ELAZ! 🚀\nتحب تكمل مع مساعدنا الذكي ولا حابب تتواصل واتساب مع خدمة العملاء؟";
+    const text = "أهلاً بكم في وكالة ELAZ للتسويق الرقمي! 🚀\nحابين تبدأوا الكلام مع مساعدنا الذكي ولا تحولوا لخدمة العملاء؟";
     const buttons = [
         { type: "postback", title: "الذكاء الاصطناعي 🤖", payload: "START_AI" },
         { type: "web_url", title: "خدمة العملاء (واتساب) 👤", url: MY_WHATSAPP_LINK }
     ];
     
-    // تأخير بسيط عشان الـ Typing يبان قبل الأزرار
     setTimeout(async () => {
         await sendButtons(sid, text, buttons);
     }, 1500);
@@ -85,13 +83,14 @@ app.post('/webhook', async (req, res) => {
             if (event.postback) {
                 if (event.postback.payload === 'START_AI') {
                     await sendTyping(sid);
-                    setTimeout(() => sendMsg(sid, "تمام! أنا معاك، تحب تعرف إيه عن خدماتنا في التصميم أو الإعلانات؟"), 1000);
+                    setTimeout(() => sendMsg(sid, "تمام جداً! إحنا معاكم، حابين تعرفوا إيه عن خدماتنا في التصميم أو الإعلانات؟"), 1000);
                 }
                 continue;
             }
 
             if (event.message?.text) {
                 const userMsg = event.message.text.toLowerCase();
+                // تم إصلاح الـ Regex لمنع أخطاء الـ Deploy
                 const welcomeRegex = /^(أهلا|اهلا|سلام|hi|hello|hey|ازيك|صباح|مساء|هلو|start|بدء|welcome|؟|\?)/i;
 
                 if (welcomeRegex.test(userMsg)) {
@@ -116,7 +115,7 @@ app.post('/webhook', async (req, res) => {
                             }
                         }, 2000);
                     } catch (err) {
-                        sendMsg(sid, "ثواني وعمار هيرد عليك بكل التفاصيل.");
+                        sendMsg(sid, "ثواني وفريقنا هيرد عليكم بكل التفاصيل.");
                     }
                 }
             }
@@ -131,4 +130,4 @@ app.get('/webhook', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 ELAZ Bot is LIVE with WhatsApp integration!`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 ELAZ System is LIVE!`));
