@@ -105,7 +105,7 @@ async function sendWelcomeButtons(sid, name) {
 //  تنبيه عمار
 // ═══════════════════════════════════════════
 function notifyAmmar(name, msg, psid) {
-    if (AMMAR_PSID) sendMsg(AMMAR_PSID, `🚨 عميل محتاج تواصل:\nالاسم: ${name}\nالرسالة: "${msg}"`);
+    //if (AMMAR_PSID) sendMsg(AMMAR_PSID, `🚨 عميل محتاج تواصل:\nالاسم: ${name}\nالرسالة: "${msg}"`);
     if (ZAPIER_WEBHOOK) axios.post(ZAPIER_WEBHOOK, {
         name, msg, psid, time: new Date().toLocaleString('ar-EG')
     }).catch(() => {});
