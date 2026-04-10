@@ -205,8 +205,7 @@ app.post('/webhook', async (req, res) => {
         if (event.message?.text) {
             const userMsg = event.message.text.trim();
             if (getOrder(sid)) { if (await handleOrderFlow(sid, userMsg, name)) continue; }
-            if (/^(أهلا|اهلا|hi|hello)$/i.test(userMsg)) { await sendButtons(sid, `أهلاً بك! تحب تشوف خدماتنا؟`, [{ type: "postback", title: "خدماتنا 📋", payload: "SHOW_SERVICES" }]); continue; }
-            
+            if (/^(أهلا|اهلا|هلا|يا هلا|مرحبا|صباح الخير|مساء الخير|hi|hello|hey|سلام)$/i.test(userMsg)) {
             await sendTyping(sid);
             const reply = await askGroq(userMsg, name, sid);
             await sendMsg(sid, reply);
