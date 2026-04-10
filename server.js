@@ -12,6 +12,9 @@ const ZAPIER_WEBHOOK    = process.env.ZAPIER_WEBHOOK;
 
 const MY_WHATSAPP_LINK = "https://wa.me/201557963125";
 
+// ═══════════════════════════════════════════
+// حفظ سياق المحادثة وأسماء العملاء
+// ═══════════════════════════════════════════
 const conversations = new Map();
 const nameCache = new Map();
 
@@ -20,24 +23,25 @@ function getHistory(psid) { return conversations.get(psid) || []; }
 function addToHistory(psid, role, content) {
     const history = getHistory(psid);
     history.push({ role, content });
-    if (history.length > 10) history.splice(0, 2);
+    if (history.length > 8) history.splice(0, 2); // حفظ آخر 4 تبادلات
     conversations.set(psid, history);
 }
 
 // ═══════════════════════════════════════════
-// تحديث الـ Prompt ليكون أكثر صرامة وتخصصاً
+// التعليمات الصارمة للبوت (System Prompt)
 // ═══════════════════════════════════════════
-const SYSTEM_PROMPT = `أنت المساعد الذكي الرسمي والوحيد لوكالة ELAZ للتسويق الرقمي.
-قواعدك الصارمة التي لا تقبل النقاش:
-1. التخصص فقط: أنت خبير في (تصميم الهوية البصرية، الميديا باينج، برمجة بوتات الذكاء الاصطناعي، تطوير المواقع).
-2. رفض المواضيع الجانبية: إذا سألك العميل عن أي شيء خارج تخصص الوكالة (مثل الأفلام، الطبخ، أخبار، أو دردشة عامة)، اعتذر برقي وقول: "يا فندم، أنا متخصص في خدمات وكالة ELAZ للتسويق الرقمي فقط، وأقدر أساعد حضرتك في تطوير مشروعك من خلال خدماتنا المتاحة."
-3. اللهجة: مصرية "بيزنس" راقية جداً وبصيغة الجمع (إحنا، فريقنا).
-4. الاحترام: (حضرتك، يا فندم) في كل جملة.
-5. رد الأسعار: "بناءً على احتياجات مشروع حضرتك، بنحدد التكلفة، اتفضل سيب رقم موبايلك وفريقنا هيتواصل مع حضرتك فوراً".
-6. الاختصار: ردودك لا تتعدى 3 جمل.`;
+const SYSTEM_PROMPT = `أنت المساعد الذكي الرسمي لوكالة ELAZ للتسويق الرقمي.
+قواعدك الصارمة:
+1. اللغة: لهجة مصرية "بيزنس" راقية جداً ومفهومة.
+2. التخصص: أنت خبير فقط في (التصميم البصري، الميديا باينج، برمجة بوتات الذكاء الاصطناعي، وتطوير المواقع).
+3. منع الدردشة العامة: إذا سألك العميل عن أي موضوع خارج التخصص (أفلام، طبخ، أخبار)، اعتذر برقي: "يا فندم، أنا متخصص في خدمات وكالة ELAZ الرقمية فقط، وأقدر أساعد حضرتك في تطوير مشروعك من خلال خدماتنا."
+4. الاحترام: استخدم (يا فندم، حضرتك) في كل جملة.
+5. صيغة الوكالة: تحدث دائماً بـ "إحنا، فريقنا، وكالتنا".
+6. رد الأسعار: "بناءً على احتياجات مشروع حضرتك، بنحدد التكلفة، اتفضل سيب رقم موبايلك وفريقنا هيتواصل مع حضرتك فوراً".`;
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
+// ═══════════════════════════════════════════
+// الدوال المساعدة
+// ═══════════════════════════════════════════
 async function getUserInfo(psid) {
     if (nameCache.has(psid)) return nameCache.get(psid);
     try {
@@ -66,59 +70,49 @@ async function sendButtons(sid, text, buttons) {
     try {
         await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
             recipient: { id: sid },
-            message: {
-                attachment: {
-                    type: "template",
-                    payload: { template_type: "button", text, buttons }
-                }
-            }
+            message: { attachment: { type: "template", payload: { template_type: "button", text, buttons } } }
         });
-    } catch (e) {
-        await sendMsg(sid, text);
-    }
+    } catch (e) { await sendMsg(sid, text); }
 }
 
 async function sendWelcomeButtons(sid, name) {
     await sendTyping(sid);
-    await sleep(1000);
-    await sendButtons(sid,
-        `أهلاً بحضرتك يا ${name} في وكالة ELAZ للتسويق الرقمي! 🚀\nتحب تكمل مع مساعدنا الذكي ولا تتواصل مع خدمة العملاء مباشرة؟`,
-        [
-            { type: "postback", title: "الذكاء الاصطناعي 🤖", payload: "START_AI" },
-            { type: "web_url", title: "خدمة العملاء (واتساب) 👤", url: MY_WHATSAPP_LINK }
-        ]
-    );
+    const text = `أهلاً بحضرتك يا ${name} في وكالة ELAZ للتسويق الرقمي! 🚀\nتحب تكمل مع مساعدنا الذكي ولا تتواصل مع خدمة العملاء مباشرة؟`;
+    const buttons = [
+        { type: "postback", title: "الذكاء الاصطناعي 🤖", payload: "START_AI" },
+        { type: "web_url", title: "خدمة العملاء (واتساب) 👤", url: MY_WHATSAPP_LINK }
+    ];
+    setTimeout(async () => { await sendButtons(sid, text, buttons); }, 1000);
 }
 
-function notifyAmmar(name, msg, psid) {
-    if (ZAPIER_WEBHOOK) axios.post(ZAPIER_WEBHOOK, {
-        name, msg, psid, time: new Date().toLocaleString('ar-EG')
-    }).catch(() => {});
-}
-
+// ═══════════════════════════════════════════
+// الذكاء الاصطناعي (Groq)
+// ═══════════════════════════════════════════
 async function askGroq(userMsg, name, psid) {
     addToHistory(psid, 'user', userMsg);
     try {
         const res = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
             model: 'llama-3.3-70b-versatile',
-            max_tokens: 300,
-            temperature: 0.3, // تقليل الـ temperature يخلي البوت "عاقل" وما يألفش
+            max_tokens: 250,
+            temperature: 0.1, // لضمان عدم وجود حروف غريبة أو "هلفطة"
             messages: [
                 { role: 'system', content: `${SYSTEM_PROMPT}\nاسم العميل: ${name}` },
                 ...getHistory(psid)
             ]
         }, { headers: { Authorization: `Bearer ${GROQ_API_KEY}` } });
 
-        const reply = res.data.choices[0].message.content;
+        let reply = res.data.choices[0].message.content;
         addToHistory(psid, 'assistant', reply);
         return reply;
     } catch (e) {
-        return `إحنا معاك يا ${name}، ثواني وفريقنا هيرد على حضرتك بكل التفاصيل 🙏`;
+        return `يا فندم، إحنا معاك، ثواني وفريقنا في ELAZ هيرد على حضرتك بكل التفاصيل.`;
     }
 }
 
-const welcomeRegex = /^(أهلا|اهلا|سلام|hi|hello|hey|ازيك|صباح|مساء|هلو|start|بدء|welcome)/i;
-const buyRegex = /سعر|بكام|تكلفة|عرض|ازاي نبدأ|باكدج|موبايل|رقم/i;
+// ═══════════════════════════════════════════
+// الـ Webhooks
+// ═══════════════════════════════════════════
+const welcomeRegex = /^(أهلا|اهلا|سلام|hi|hello|hey|ازيك|صباح|مساء|هلو|start|بدء|welcome|؟|\?)/i;
 
 app.post('/webhook', async (req, res) => {
     if (req.body.object !== 'page') return res.sendStatus(404);
@@ -138,23 +132,22 @@ app.post('/webhook', async (req, res) => {
                 await sendWelcomeButtons(sid, name);
             } else if (payload === 'START_AI') {
                 await sendTyping(sid);
-                await sleep(1000);
-                await sendMsg(sid, `إحنا معاك يا ${name}، اتفضل حضرتك حابب تعرف إيه عن خدماتنا في التصميم أو الإعلانات؟`);
+                setTimeout(async () => {
+                    await sendMsg(sid, `إحنا معاك يا ${name}، اتفضل حضرتك حابب تعرف إيه عن خدماتنا في التصميم أو الإعلانات؟`);
+                }, 1000);
             }
             continue;
         }
 
         if (event.message?.text) {
             const userMsg = event.message.text;
-            if (buyRegex.test(userMsg)) notifyAmmar(name, userMsg, sid);
 
             if (welcomeRegex.test(userMsg.trim())) {
                 await sendWelcomeButtons(sid, name);
             } else {
                 await sendTyping(sid);
                 const reply = await askGroq(userMsg, name, sid);
-                await sleep(500);
-                await sendMsg(sid, reply);
+                setTimeout(async () => { await sendMsg(sid, reply); }, 1000);
             }
         }
     }
