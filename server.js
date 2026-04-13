@@ -61,7 +61,7 @@ async function askAI(message) {
             ]
         }, {
             headers: {
-                "Authorization": \`Bearer \${OPENROUTER_API_KEY}\`,
+                "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
                 "Content-Type": "application/json"
             }
         });
