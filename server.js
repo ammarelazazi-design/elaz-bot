@@ -6,7 +6,7 @@ const app = express().use(bodyParser.json());
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN      = process.env.VERIFY_TOKEN;
 const CLAUDE_API_KEY    = process.env.CLAUDE_API_KEY;
-const MY_WHATSAPP_LINK  = "https://wa.me/201021464304";
+const MY_WHATSAPP_LINK  = "https://wa.me/201557963125";
 const sleep = (ms) => new Promise(res => setTimeout(res, ms));
 
 // ============================================================
@@ -116,7 +116,7 @@ async function getAIReply(userText, gender, clientName) {
         });
         return res.data.content[0].text;
     } catch (e) {
-        return "عندنا مشكلة صغيرة دلوقتي 😅 ابعتلنا على واتساب وهنرد عليك فورًا!";
+        return "اهلا يا فندم اتفضل!";
     }
 }
 
