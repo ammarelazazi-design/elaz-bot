@@ -1,0 +1,10 @@
+{
+  "clients": {},
+  "stats": {
+    "totalMessages": 0,
+    "totalPostbacks": 0,
+    "serviceClicks": {},
+    "appointments": []
+  },
+  "broadcast": []
+}
