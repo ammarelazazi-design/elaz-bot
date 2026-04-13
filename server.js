@@ -326,5 +326,5 @@ app.post('/webhook', async (req, res) => {
 // 🚀 START
 // ============================================================
 app.listen(process.env.PORT || 3000, () =>
-    console.log('✅ ELAZ Bot Live — AI + Stats + Broadcast + Booking + Portfolio!')
-); دا الكود server
+    console.log('✅ ELAZ Bot Live — AI + Stats + Broadcast + Booking + Portfolio!')
+);
