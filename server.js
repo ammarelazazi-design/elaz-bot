@@ -59,42 +59,67 @@ async function sendButtons(sid, text, buttons) {
 }
 
 // ============================================================
-// 📲 SMART BOOKING FLOW
+// 📲 SMART BOOKING FLOW 
 // ============================================================
 async function handleBookingFlow(sid, text, client) {
     const db = loadDB();
     
+    // التحقق لو العميل بيسأل "ليه" أو "بكام" وهو في مرحلة الاسم
+    const triggers = ["ليه", "بكام", "عايز اعرف", "اشمعنا", "ازاي", "فين"];
+    const isQuestion = triggers.some(word => text.includes(word)) || text.length < 2;
+
+    if (client.step === 1 && isQuestion) {
+        await sendTyping(sid);
+        const aiReply = await askAI(text + " (وضح للعميل بلباقة إننا محتاجين البيانات عشان نحدد موعد استشارة دقيق ونعرف نكلمه باسمه)");
+        await sendMsg(sid, aiReply);
+        await sleep(500);
+        await sendMsg(sid, "فـ كنا بنقول.. اسم حضرتك بالكامل إيه؟ 😊");
+        return; // بنوقف هنا ونستنى رده الجاي كاسم
+    }
+
     if (client.step === 1) {
         client.name = text;
         client.step = 2;
         saveDB(db);
         await sendTyping(sid); await sleep(500);
-        await sendMsg(sid, `أهلاً بيك يا أستاذ ${text}.. ممكن تقولي تفاصيل طلبك إيه؟ (مجال شغلك وهدفك من الخدمة)`);
+        await sendMsg(sid, `أهلاً بيك يا أستاذ ${text}.. نورتنا في ELAZ ✨\nممكن تقولي تفاصيل أكتر عن طلبك؟ (مجال شغلك وهدفك من الخدمة)`);
         return;
     }
+    
     if (client.step === 2) {
+        // لو باعت تفاصيل قصيرة اوي برضه نخليه يوضح
+        if (text.length < 5) {
+            await sendMsg(sid, "ممكن توضحلي تفاصيل أكتر شوية عشان أقدر أفيدك صح؟");
+            return;
+        }
         client.details = text;
         client.step = 3;
         saveDB(db);
         await sendTyping(sid); await sleep(500);
-        await sendMsg(sid, "تمام جداً.. محتاج بس رقم تليفون حضرتك عشان الفريق يكلمك يحدد معاك الميعاد 📞");
+        await sendMsg(sid, "تمام جداً.. محتاج بس رقم تليفون حضرتك عشان الفريق يكلمك يحدد معاك ميعاد الاستشارة 📞");
         return;
     }
+
     if (client.step === 3) {
+        // التحقق من رقم التليفون (على الأقل 11 رقم)
+        if (!/[0-9]{11,}/.test(text)) {
+            await sendMsg(sid, "من فضلك ابعت رقم تليفون صحيح عشان نقدر نتواصل معاك.");
+            return;
+        }
         client.phone = text;
         const appointment = { name: client.name, service: client.service, details: client.details, phone: client.phone, time: new Date().toLocaleString('ar-EG') };
+        
         if (GOOGLE_SHEET_URL) try { await axios.post(GOOGLE_SHEET_URL, appointment); } catch (e) {}
         
         db.stats.appointments.push(appointment);
-        client.awaitingBooking = false; client.step = 0; // تصفير الحالة
+        client.awaitingBooking = false; client.step = 0;
         saveDB(db);
 
-        await sendMsg(sid, "تسلم يا فندم! سجلت بياناتك وان شاء الله هنتواصل معاك في أسرع وقت. ⚡");
+        await sendMsg(sid, `تسلم يا أستاذ ${client.name}! سجلت بياناتك وان شاء الله فريق ELAZ هيتواصل معاك في أسرع وقت. ⚡`);
         await sleep(800);
-        await sendButtons(sid, "لو مستعجل، تقدر تكلمنا واتساب فوراً:", [{ type: "web_url", title: "👤 واتساب مباشر", url: MY_WHATSAPP_LINK }]);
+        await sendButtons(sid, "لو حابب تكلمنا واتساب فوراً اختار من هنا:", [{ type: "web_url", title: "👤 واتساب مباشر", url: MY_WHATSAPP_LINK }]);
     }
 }
-
 // ============================================================
 // 🔗 WEBHOOK
 // ============================================================
