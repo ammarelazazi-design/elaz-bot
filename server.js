@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express'), bodyParser = require('body-parser'), axios = require('axios');
 const app = express().use(bodyParser.json());
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN, VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const MY_WHATSAPP_LINK = "https://wa.me/201021464304", sleep = (ms) => new Promise(res => setTimeout(res, ms));
+const MY_WHATSAPP_LINK = "https://wa.me/201557963125", sleep = (ms) => new Promise(res => setTimeout(res, ms));
 
 async function sendTyping(sid) {
     try { await axios.post(`https://graph.facebook.com/v21.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, { recipient: { id: sid }, sender_action: "typing_on" }); } catch (e) {}
