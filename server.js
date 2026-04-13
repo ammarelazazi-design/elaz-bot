@@ -28,133 +28,104 @@ function saveDB(db) { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); }
 function getClient(db, sid) {
     if (!db.clients[sid]) {
         db.clients[sid] = { 
-            sid, name: null, gender: null, lastService: null, 
-            awaitingBooking: false, tempDetails: "" 
+            sid, name: null, phone: null, service: null, details: null,
+            step: 0, awaitingBooking: false 
         };
     }
     return db.clients[sid];
 }
 
 // ============================================================
-// 🤖 AI
-// ============================================================
-async function askAI(message) {
-    try {
-        const res = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
-            model: "openai/gpt-3.5-turbo",
-            messages: [
-                {
-                    role: "system",
-                    content: `
-أنت مساعد لشركة ELAZ.
-تتكلم بالمصري.
-ترد فقط في نطاق:
-- تصميم لوجو وهوية بصرية
-- إعلانات ممولة
-- بوتات ذكية
-
-هدفك تقنع العميل يحجز استشارة.
-ممنوع تخرج برا المجال ده.
-                    `
-                },
-                { role: "user", content: message }
-            ]
-        }, {
-            headers: {
-                "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-                "Content-Type": "application/json"
-            }
-        });
-
-        return res.data.choices[0].message.content;
-
-    } catch (e) {
-        console.error("AI Error:", e.response?.data || e.message);
-        return "حصل مشكلة بسيطة.. وضحلي أكتر 🙏";
-    }
-}
-
-// ============================================================
-// 📡 FACEBOOK
+// 🤖 AI & FACEBOOK HELPERS
 // ============================================================
 async function sendTyping(sid) {
-    try {
-        await axios.post(`https://graph.facebook.com/v21.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-            recipient: { id: sid },
-            sender_action: "typing_on"
-        });
-    } catch (e) {}
+    try { await axios.post(`https://graph.facebook.com/v21.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, { recipient: { id: sid }, sender_action: "typing_on" }); } catch (e) {}
 }
 
 async function sendMsg(sid, text) {
-    try {
-        await axios.post(`https://graph.facebook.com/v21.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-            recipient: { id: sid },
-            message: { text }
-        });
-    } catch (e) {
-        console.error("Send Error:", e.response?.data || e.message);
-    }
+    try { await axios.post(`https://graph.facebook.com/v21.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, { recipient: { id: sid }, message: { text } }); } catch (e) {}
 }
 
 async function sendButtons(sid, text, buttons) {
-    try {
-        await axios.post(`https://graph.facebook.com/v21.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-            recipient: { id: sid },
-            message: {
-                attachment: {
-                    type: "template",
-                    payload: { template_type: "button", text, buttons }
-                }
-            }
-        });
-    } catch (e) {}
+    try { await axios.post(`https://graph.facebook.com/v21.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, { recipient: { id: sid }, message: { attachment: { type: "template", payload: { template_type: "button", text, buttons } } } }); } catch (e) {}
 }
 
 // ============================================================
-// 📲 BOOKING
+// 📲 SMART BOOKING FLOW (Step-by-Step)
 // ============================================================
-async function startBooking(sid, client) {
+async function handleBookingFlow(sid, text, client) {
     const db = loadDB();
     client.awaitingBooking = true;
-    client.tempDetails = "";
 
-    db.clients[sid] = client;
-    saveDB(db);
-
-    await sendMsg(sid, "ابعت اسمك + رقمك + تفاصيل طلبك 🙌");
-}
-
-async function handleBookingData(sid, text, client) {
-    const db = loadDB();
-
-    if (["تمام","ok","ماشي"].includes(text.toLowerCase())) {
-
-        const appointment = {
-            name: client.name || "عميل",
-            service: client.lastService,
-            details: client.tempDetails,
-            time: new Date().toLocaleString('ar-EG')
-        };
-
-        if (GOOGLE_SHEET_URL) {
-            await axios.post(GOOGLE_SHEET_URL, appointment);
-        }
-
-        client.awaitingBooking = false;
-        client.tempDetails = "";
-
-        db.stats.appointments.push(appointment);
-        saveDB(db);
-
-        await sendMsg(sid, "تم الحجز ✅ هنكلمك قريب!");
+    // الخطوة 0: اختيار الخدمة (لو مكنش اختارها من الأزرار)
+    if (client.step === 0) {
+        await sendButtons(sid, "يا أهلاً بيك! حابب تستفسر عن انهي خدمة بالظبط؟ ✨", [
+            { type: "postback", title: "🎨 هوية بصرية", payload: "SET_SRV_DESIGN" },
+            { type: "postback", title: "📢 إعلانات ممولة", payload: "SET_SRV_ADS" },
+            { type: "postback", title: "🤖 بوتات ذكية", payload: "SET_SRV_BOTS" }
+        ]);
         return;
     }
 
-    client.tempDetails += " | " + text;
-    saveDB(db);
+    // الخطوة 1: طلب الاسم
+    if (client.step === 1) {
+        await sendMsg(sid, "تشرفنا يا فندم! ممكن أعرف اسم حضرتك بالكامل؟ 😊");
+        client.step = 2;
+        saveDB(db);
+        return;
+    }
 
-    await sendMsg(sid, "سجلت 👍 كمل أو قول تمام");
+    // الخطوة 2: استقبال الاسم وطلب التفاصيل
+    if (client.step === 2) {
+        client.name = text;
+        await sendMsg(sid, `أهلاً بك يا أستاذ ${text}.. ممكن تقولي تفاصيل طلبك إيه بالظبط؟ (مثلاً: نوع مجالك أو هدفك من الخدمة)`);
+        client.step = 3;
+        saveDB(db);
+        return;
+    }
+
+    // الخطوة 3: استقبال التفاصيل وطلب الرقم
+    if (client.step === 3) {
+        client.details = text;
+        await sendMsg(sid, "تمام جداً.. آخر حاجة محتاجين رقم تليفون حضرتك عشان نتواصل معاك فوراً 📞");
+        client.step = 4;
+        saveDB(db);
+        return;
+    }
+
+    // الخطوة 4: استقبال الرقم والإنهاء
+    if (client.step === 4) {
+        client.phone = text;
+        
+        const appointment = {
+            name: client.name,
+            service: client.service || "غير محدد",
+            details: client.details,
+            phone: client.phone,
+            time: new Date().toLocaleString('ar-EG')
+        };
+
+        // إرسال لجوجل شيت
+        if (GOOGLE_SHEET_URL) {
+            try { await axios.post(GOOGLE_SHEET_URL, appointment); } catch (e) { console.error("Sheet Error"); }
+        }
+
+        // حفظ في الـ DB
+        db.stats.appointments.push(appointment);
+        
+        // إعادة تصفير العميل
+        client.awaitingBooking = false;
+        client.step = 0;
+        db.clients[sid] = client;
+        saveDB(db);
+
+        await sendMsg(sid, "تمام يا فندم، سجلت بياناتك وان شاء الله فريق ELAZ هيتواصل معك في أسرع وقت ممكن! ⚡");
+        await sleep(1000);
+        await sendButtons(sid, "لو حابب تتواصل معانا مباشرة دلوقتي تقدر تكلمنا واتساب من هنا:", [
+            { type: "web_url", title: "👤 واتساب مباشر", url: MY_WHATSAPP_LINK }
+        ]);
+        await sendMsg(sid, "شكراً لثقتك في ELAZ، ننتظرك المرة القادمة.. يومك سعيد! 🌸");
+    }
 }
 
 // ============================================================
@@ -162,94 +133,57 @@ async function handleBookingData(sid, text, client) {
 // ============================================================
 app.post('/webhook', async (req, res) => {
     const body = req.body;
+    if (body.object !== 'page') return res.sendStatus(404);
 
     for (let entry of body.entry) {
         const messaging = entry.messaging[0];
+        if (!messaging) continue;
         const sid = messaging.sender.id;
 
         const db = loadDB();
         const client = getClient(db, sid);
 
+        // التعامل مع الرسائل النصية
         if (messaging.message?.text) {
-
             if (client.awaitingBooking) {
-                await handleBookingData(sid, messaging.message.text, client);
-                continue;
+                await handleBookingFlow(sid, messaging.message.text, client);
+            } else {
+                await sendTyping(sid); await sleep(800);
+                await sendButtons(sid, "أهلاً بك في ELAZ! 🚀\nتقدر تختار الخدمة اللي محتاجها من الأزرار تحت أو تحجز استشارة مباشرة.", [
+                    { type: "postback", title: "📋 خدماتنا", payload: "SHOW_SERVICES" },
+                    { type: "postback", title: "📅 حجز موعد", payload: "START_BOOKING" }
+                ]);
             }
-
-            await sendTyping(sid);
-            await sleep(600);
-
-            const aiReply = await askAI(messaging.message.text);
-            await sendMsg(sid, aiReply);
-
-            await sendButtons(sid, "تحب تحجز؟", [
-                { type: "postback", title: "📅 احجز", payload: "BOOK" }
-            ]);
         }
 
+        // التعامل مع الأزرار (Postback)
         if (messaging.postback) {
-            if (messaging.postback.payload === "BOOK") {
-                await startBooking(sid, client);
+            const p = messaging.postback.payload;
+
+            if (p === 'START_BOOKING') {
+                client.step = 1;
+                await handleBookingFlow(sid, "", client);
+            } else if (p === 'SHOW_SERVICES') {
+                await sendButtons(sid, "دي الخدمات اللي بنقدمها حالياً:", [
+                    { type: "postback", title: "🎨 هوية بصرية", payload: "SET_SRV_DESIGN" },
+                    { type: "postback", title: "📢 إعلانات ممولة", payload: "SET_SRV_ADS" },
+                    { type: "postback", title: "🤖 بوتات ذكية", payload: "SET_SRV_BOTS" }
+                ]);
+            } else if (p.startsWith('SET_SRV_')) {
+                const srvMap = { 'SET_SRV_DESIGN': 'تصميم هوية', 'SET_SRV_ADS': 'ميديا باينج', 'SET_SRV_BOTS': 'بوتات ذكية' };
+                client.service = srvMap[p];
+                client.step = 1;
+                db.clients[sid] = client;
+                saveDB(db);
+                await handleBookingFlow(sid, "", client);
             }
         }
     }
-
     res.sendStatus(200);
 });
 
-// ============================================================
-// 📊 DASHBOARD (Bootstrap)
-// ============================================================
-app.get('/dashboard', (req, res) => {
-    const db = loadDB();
-
-    res.send(`
-    <html>
-    <head>
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-        <style>body{background:#0f172a;color:white}</style>
-    </head>
-    <body class="p-4">
-
-    <h1>🚀 ELAZ Dashboard</h1>
-
-    <div class="row my-4">
-        <div class="col">
-            <div class="card p-3 bg-dark">
-                👥 Clients: ${Object.keys(db.clients).length}
-            </div>
-        </div>
-        <div class="col">
-            <div class="card p-3 bg-dark">
-                📅 Appointments: ${db.stats.appointments.length}
-            </div>
-        </div>
-    </div>
-
-    <h3>📅 الحجوزات</h3>
-    <table class="table table-dark">
-        <tr><th>الاسم</th><th>الخدمة</th><th>التفاصيل</th></tr>
-        ${db.stats.appointments.map(a => `
-            <tr>
-                <td>${a.name}</td>
-                <td>${a.service}</td>
-                <td>${a.details}</td>
-            </tr>
-        `).join('')}
-    </table>
-
-    </body>
-    </html>
-    `);
-});
-
-// ============================================================
-// VERIFY + SERVER
-// ============================================================
 app.get('/webhook', (req, res) => {
-    if (req.query['hub.verify_token'] === VERIFY_TOKEN)
-        res.send(req.query['hub.challenge']);
+    if (req.query['hub.verify_token'] === VERIFY_TOKEN) res.send(req.query['hub.challenge']);
     else res.send('Error');
 });
 
