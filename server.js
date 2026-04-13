@@ -30,19 +30,25 @@ function getClient(db, sid) {
 }
 
 // ============================================================
-// 🤖 AI RESPONSE
+// 🤖 SMART AI AGENT (The Brain)
 // ============================================================
-async function askAI(message) {
+async function askAI(message, context = "") {
     try {
         const res = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
             model: "openai/gpt-3.5-turbo",
             messages: [
-                { role: "system", content: "أنت مساعد ذكي لشركة ELAZ. بتتكلم مصري بأسلوب راقي ومختصر. خدماتنا: (لوجو وهوية بصرية، ميديا باينج وإعلانات ممولة، بوتات ذكية). هدفك تدردش مع العميل وتقنعه يحجز استشارة مجانية. لو سألك عن السعر قوله بيحدد بعد معرفة التفاصيل في الاستشارة." },
+                { 
+                    role: "system", 
+                    content: `أنت مساعد ذكي لشركة ELAZ للخدمات الرقمية (لوجو، ميديا باينج، بوتات).
+                    تحدث بلهجة مصرية ودودة واحترافية. 
+                    السياق الحالي: ${context}
+                    مهمتك: الرد على استفسار العميل بلباقة وتوجيهه لإكمال عملية الحجز.` 
+                },
                 { role: "user", content: message }
             ]
         }, { headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}` } });
         return res.data.choices[0].message.content;
-    } catch (e) { return "نورت ELAZ! قولي حابب تعرف تفاصيل أكتر عن انهي خدمة؟"; }
+    } catch (e) { return "نورت ELAZ! ممكن تكمل معايا باقي البيانات؟"; }
 }
 
 // ============================================================
@@ -59,67 +65,61 @@ async function sendButtons(sid, text, buttons) {
 }
 
 // ============================================================
-// 📲 SMART BOOKING FLOW 
+// 📲 DYNAMIC BOOKING FLOW (AI Integrated)
 // ============================================================
 async function handleBookingFlow(sid, text, client) {
     const db = loadDB();
     
-    // التحقق لو العميل بيسأل "ليه" أو "بكام" وهو في مرحلة الاسم
-    const triggers = ["ليه", "بكام", "عايز اعرف", "اشمعنا", "ازاي", "فين"];
-    const isQuestion = triggers.some(word => text.includes(word)) || text.length < 2;
-
-    if (client.step === 1 && isQuestion) {
-        await sendTyping(sid);
-        const aiReply = await askAI(text + " (وضح للعميل بلباقة إننا محتاجين البيانات عشان نحدد موعد استشارة دقيق ونعرف نكلمه باسمه)");
-        await sendMsg(sid, aiReply);
-        await sleep(500);
-        await sendMsg(sid, "فـ كنا بنقول.. اسم حضرتك بالكامل إيه؟ 😊");
-        return; // بنوقف هنا ونستنى رده الجاي كاسم
-    }
-
+    // المرحلة 1: جمع الاسم
     if (client.step === 1) {
+        // التحقق بالـ AI إذا كان العميل بيسأل مش بيدي اسم
+        if (text.length < 3 || text.includes("ليه") || text.includes("بكام")) {
+            const reply = await askAI(text, "العميل يسأل لماذا نطلب اسمه أو يستفسر عن السعر بدل ذكر اسمه.");
+            await sendMsg(sid, reply);
+            await sendMsg(sid, "فـ ممكن اسم حضرتك عشان نسجل الموعد؟ 😊");
+            return;
+        }
         client.name = text;
         client.step = 2;
         saveDB(db);
-        await sendTyping(sid); await sleep(500);
-        await sendMsg(sid, `أهلاً بيك يا أستاذ ${text}.. نورتنا في ELAZ ✨\nممكن تقولي تفاصيل أكتر عن طلبك؟ (مجال شغلك وهدفك من الخدمة)`);
-        return;
-    }
-    
-    if (client.step === 2) {
-        // لو باعت تفاصيل قصيرة اوي برضه نخليه يوضح
-        if (text.length < 5) {
-            await sendMsg(sid, "ممكن توضحلي تفاصيل أكتر شوية عشان أقدر أفيدك صح؟");
-            return;
-        }
-        client.details = text;
-        client.step = 3;
-        saveDB(db);
-        await sendTyping(sid); await sleep(500);
-        await sendMsg(sid, "تمام جداً.. محتاج بس رقم تليفون حضرتك عشان الفريق يكلمك يحدد معاك ميعاد الاستشارة 📞");
+        await sendMsg(sid, `أهلاً يا أستاذ ${text}.. نورتنا! ✨`);
+        await sleep(500);
+        await sendMsg(sid, "ممكن تقولي تفاصيل أكتر عن طلبك؟ (مثلاً حابب تعمل لوجو لمجال إيه؟)");
         return;
     }
 
+    // المرحلة 2: جمع التفاصيل
+    if (client.step === 2) {
+        client.details = text;
+        client.step = 3;
+        saveDB(db);
+        // الـ AI هنا بيرد رد "ذكي" على تفاصيل العميل قبل ما يطلب الرقم
+        const aiValidation = await askAI(text, `العميل ذكر تفاصيل طلبه وهي: ${text}. رد عليه بكلمتين تشجيع إننا نقدر نساعده واطلب منه رقم التليفون.`);
+        await sendMsg(sid, aiValidation);
+        await sendMsg(sid, "محتاجين بس رقم التليفون عشان الفريق يحدد معاك الميعاد 📞");
+        return;
+    }
+
+    // المرحلة 3: جمع الرقم والإنهاء
     if (client.step === 3) {
-        // التحقق من رقم التليفون (على الأقل 11 رقم)
-        if (!/[0-9]{11,}/.test(text)) {
-            await sendMsg(sid, "من فضلك ابعت رقم تليفون صحيح عشان نقدر نتواصل معاك.");
+        if (!/[0-9]{10,}/.test(text)) {
+            await sendMsg(sid, "من فضلك ابعت رقم تليفون صحيح (مثلاً 01xxxxxxxxx)");
             return;
         }
         client.phone = text;
         const appointment = { name: client.name, service: client.service, details: client.details, phone: client.phone, time: new Date().toLocaleString('ar-EG') };
         
         if (GOOGLE_SHEET_URL) try { await axios.post(GOOGLE_SHEET_URL, appointment); } catch (e) {}
-        
         db.stats.appointments.push(appointment);
+        
         client.awaitingBooking = false; client.step = 0;
         saveDB(db);
 
-        await sendMsg(sid, `تسلم يا أستاذ ${client.name}! سجلت بياناتك وان شاء الله فريق ELAZ هيتواصل معاك في أسرع وقت. ⚡`);
-        await sleep(800);
-        await sendButtons(sid, "لو حابب تكلمنا واتساب فوراً اختار من هنا:", [{ type: "web_url", title: "👤 واتساب مباشر", url: MY_WHATSAPP_LINK }]);
+        await sendMsg(sid, `تسلم يا أستاذ ${client.name}! بياناتك وصلت وان شاء الله فريق ELAZ هيكلمك في أسرع وقت. ⚡`);
+        await sendButtons(sid, "لو حابب تكلمنا واتساب فوراً:", [{ type: "web_url", title: "👤 واتساب مباشر", url: MY_WHATSAPP_LINK }]);
     }
 }
+
 // ============================================================
 // 🔗 WEBHOOK
 // ============================================================
@@ -137,17 +137,14 @@ app.post('/webhook', async (req, res) => {
         if (messaging.message?.text) {
             const msgText = messaging.message.text;
 
-            // لو العميل في نص عملية الحجز، كمل معاه خطواته
             if (client.awaitingBooking && client.step > 0) {
                 await handleBookingFlow(sid, msgText, client);
-            } 
-            // لو كلام عادي، الـ AI يرد ويحط أزرار في الآخر
-            else {
+            } else {
                 await sendTyping(sid);
-                const aiReply = await askAI(msgText);
+                const aiReply = await askAI(msgText, "دردشة عامة مع عميل مهتم بخدمات ELAZ.");
                 await sendMsg(sid, aiReply);
                 await sleep(500);
-                await sendButtons(sid, "تحب تاخد خطوة ونبدأ شغل؟", [
+                await sendButtons(sid, "تحب تبدأ معانا؟", [
                     { type: "postback", title: "📋 خدماتنا", payload: "SHOW_SERVICES" },
                     { type: "postback", title: "📅 حجز موعد", payload: "START_BOOKING" }
                 ]);
@@ -159,9 +156,9 @@ app.post('/webhook', async (req, res) => {
             if (p === 'START_BOOKING') {
                 client.awaitingBooking = true; client.step = 1;
                 saveDB(db);
-                await sendMsg(sid, "تمام يا فندم، عشان نجهز للاستشارة محتاج أعرف اسم حضرتك بالكامل؟ 😊");
+                await sendMsg(sid, "تمام جداً، محتاج أعرف اسم حضرتك بالكامل عشان نسجل الحجز؟ 😊");
             } else if (p === 'SHOW_SERVICES') {
-                await sendButtons(sid, "دي الخدمات اللي بنتميز بيها في ELAZ:", [
+                await sendButtons(sid, "خدمات ELAZ المتاحة:", [
                     { type: "postback", title: "🎨 هوية بصرية", payload: "SET_SRV_DESIGN" },
                     { type: "postback", title: "📢 إعلانات ممولة", payload: "SET_SRV_ADS" },
                     { type: "postback", title: "🤖 بوتات ذكية", payload: "SET_SRV_BOTS" }
@@ -171,7 +168,7 @@ app.post('/webhook', async (req, res) => {
                 client.service = srvMap[p];
                 client.awaitingBooking = true; client.step = 1;
                 saveDB(db);
-                await sendMsg(sid, `اختيار ممتاز! بخصوص الـ ${srvMap[p]}.. ممكن اسم حضرتك بالكامل؟`);
+                await sendMsg(sid, `اختيار موفق! بخصوص ${srvMap[p]}.. ممكن اسم حضرتك؟`);
             }
         }
     }
@@ -183,4 +180,4 @@ app.get('/webhook', (req, res) => {
     else res.send('Error');
 });
 
-app.listen(process.env.PORT || 3000, () => console.log("🚀 ELAZ Bot Ready"));
+app.listen(process.env.PORT || 3000, () => console.log("🚀 ELAZ Smart Bot Live"));
