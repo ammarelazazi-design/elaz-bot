@@ -1,132 +1,179 @@
+/**
+ * 💎 ELAZ SUPREME AGENT v3.0 - "The Closer"
+ * Author: Ammar Yasser (ELAZ Agency)
+ * Purpose: Professional High-Ticket Sales Automation
+ */
+
 require('dotenv').config();
-const express = require('express'), bodyParser = require('body-parser'), axios = require('axios');
-const fs = require('fs'), path = require('path');
+const express = require('express'), 
+      bodyParser = require('body-parser'), 
+      axios = require('axios'),
+      fs = require('fs'), 
+      path = require('path');
+
 const app = express().use(bodyParser.json());
 
-const { PAGE_ACCESS_TOKEN, VERIFY_TOKEN, OPENROUTER_API_KEY, GOOGLE_SHEET_URL } = process.env;
-const MY_WHATSAPP_LINK = "https://wa.me/201557963125";
-const DB_FILE = path.join(__dirname, 'db.json');
+// --- CONFIGURATION ---
+const { PAGE_ACCESS_TOKEN, VERIFY_TOKEN, OPENROUTER_API_KEY, ADMIN_ID } = process.env;
+const DB_FILE = path.join(__dirname, 'elaz_database.json');
+const WHATSAPP_LINK = "https://wa.me/201557963125";
 
-// قاعدة البيانات لتتبع العملاء
-const loadDB = () => JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-const saveDB = (db) => fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+// --- DATABASE ENGINE ---
+const initDB = () => {
+    if (!fs.existsSync(DB_FILE)) {
+        fs.writeFileSync(DB_FILE, JSON.stringify({ clients: {}, stats: { leads: 0, conversions: 0 } }));
+    }
+};
+initDB();
 
-// ============================================================
-// 🧠 الـ AI الاستراتيجي (عقل الوكالة)
-// ============================================================
-async function elazAI(message, context) {
+const getDB = () => JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+const saveDB = (db) => fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 4));
+
+// --- ASSETS (Your Real Work) ---
+const PORTFOLIO = {
+    branding: {
+        title: "💎 Branding: ARMADA Foods",
+        img: "https://your-server.com/armada.jpg", // استبدلها بروابطك
+        desc: "تصميم هوية بصرية كاملة لبراند أغذية."
+    },
+    ads: {
+        title: "🚀 Marketing: LAPO Loan",
+        img: "https://your-server.com/lapo.jpg",
+        desc: "حملات إعلانية لزيادة المبيعات."
+    }
+};
+
+// ==========================================
+// 🧠 THE BRAIN: AI STRATEGIST
+// ==========================================
+async function callELAZ_AI(messages, client) {
     try {
-        const res = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
+        const systemPrompt = `
+        أنت "مدير مبيعات وكالة ELAZ".
+        العميل الحالي: ${client.name || 'غير معروف'}.
+        مرحلة العميل: ${client.phase}.
+        
+        قواعد العمل الصارمة:
+        1. الهدف: إقناع العميل بحجز استشارة مدفوعة أو ترك بياناته للتواصل الرسمي.
+        2. الشخصية: واثق، خبير، مصري، مهذب جداً، ولا يمزح خارج نطاق العمل.
+        3. إذا سأل عن السعر: "السعر استثمار بيعتمد على أهدافك، وعشان نحدد بدقة محتاجين نفهم تفاصيل مشروعك الأول".
+        4. إذا حاول الهزار: "نحن في ELAZ نقدر الوقت جداً، هدفنا مساعدة الشركات على النمو. كيف يمكننا تطوير مشروعك اليوم؟"
+        5. ممنوع تماماً الاعتراف بأنك "بوت". أنت "المساعد الذكي للوكالة".
+        `;
+
+        const response = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
             model: "openai/gpt-3.5-turbo",
-            messages: [{ 
-                role: "system", 
-                content: `أنت المساعد التنفيذي لوكالة ELAZ الرقمية. 
-                - العميل باعت: "${message}". سياق العميل: ${JSON.stringify(context)}.
-                - هدفك: حجز استشارة (اسم، تفاصيل، تليفون).
-                - قواعدك: 
-                  1. ممنوع الكلام في السياسة، الدين، الكورة، أو الهزار الخارج.
-                  2. لو العميل خرج عن الشغل، قوله بلباقة: "أنا هنا عشان أساعدك تكبّر البيزنس بتاعك في ELAZ، خلينا نركز في طلبك".
-                  3. لو طلب يشوف شغلك، قوله "أبهرني بتركيزك، شوف معرض أعمالنا فوق وهبعتلك البروفايل حالا".
-                  4. اللغة: مصري بأسلوب Business Class.`
-            }]
+            messages: [{ role: "system", content: systemPrompt }, ...messages]
         }, { headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}` } });
-        return res.data.choices[0].message.content;
-    } catch (e) { return "نورت وكالة ELAZ.. حابب نبدأ في أي خدمة من خدماتنا؟"; }
+
+        return response.data.choices[0].message.content;
+    } catch (e) {
+        return "أهلاً بك في ELAZ. نحن بصدد مراجعة طلبك، كيف يمكننا مساعدتك في نمو أعمالك؟";
+    }
 }
 
-// ============================================================
-// 📡 نظام الإبهار البصري (Portfolio Cards)
-// ============================================================
-const fbAPI = (data) => axios.post(`https://graph.facebook.com/v21.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, data);
+// ==========================================
+// 🛠️ UTILS: MESSAGING TOOLS
+// ==========================================
+const sendFB = async (sid, messageData) => {
+    try {
+        await axios.post(`https://graph.facebook.com/v21.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+            recipient: { id: sid },
+            ...messageData
+        });
+    } catch (err) { console.error("FB API Error", err.response?.data); }
+};
 
-async function sendGlowPortfolio(sid) {
-    const data = {
-        recipient: { id: sid },
+const sendTyping = (sid) => sendFB(sid, { sender_action: "typing_on" });
+
+// ==========================================
+// 🎯 CORE LOGIC: SALES FUNNEL
+// ==========================================
+async function handleSalesFunnel(sid, text) {
+    const db = getDB();
+    if (!db.clients[sid]) {
+        db.clients[sid] = { sid, phase: 'GREETING', history: [], data: {} };
+    }
+    const client = db.clients[sid];
+    client.history.push({ role: "user", content: text });
+    if (client.history.length > 10) client.history.shift(); // الحفاظ على الذاكرة
+
+    await sendTyping(sid);
+
+    // 1. منطق التحقق من البيانات (Validation)
+    if (client.phase === 'COLLECTING_NAME') {
+        if (text.length < 3 || text.includes("ليه")) {
+            const aiRedirection = await callELAZ_AI(client.history, client);
+            await sendFB(sid, { message: { text: aiRedirection } });
+            return;
+        }
+        client.data.name = text;
+        client.phase = 'COLLECTING_SERVICE';
+    }
+
+    // 2. رد الذكاء الاصطناعي
+    const aiResponse = await callELAZ_AI(client.history, client);
+    client.history.push({ role: "assistant", content: aiResponse });
+    saveDB(db);
+
+    // 3. إرسال الرد مع العرض البصري (Portfolio)
+    await sendFB(sid, { message: { text: aiResponse } });
+
+    // إذا كان العميل مهتم بالخدمات، ابعت الكروت الفخمة
+    if (client.phase === 'GREETING' || text.includes("خدمة") || text.includes("شغل")) {
+        await sendPortfolioCards(sid);
+    }
+}
+
+async function sendPortfolioCards(sid) {
+    const elements = Object.values(PORTFOLIO).map(item => ({
+        title: item.title,
+        image_url: item.img,
+        subtitle: item.desc,
+        buttons: [{ type: "postback", title: "احجز الآن", payload: "BOOK_SERVICE" }]
+    }));
+
+    await sendFB(sid, {
         message: {
-            attachment: {
-                type: "template",
-                payload: {
-                    template_type: "generic",
-                    elements: [
-                        {
-                            title: "💎 Branding: ARMADA Foods",
-                            image_url: "رابط_صورة_ارماندا_هنا.jpg",
-                            subtitle: "تصميم هوية بصرية كاملة لبراند أغذية عالمي.",
-                            buttons: [{ type: "postback", title: "محتاج تصميم زي ده", payload: "START_BOOKING" }]
-                        },
-                        {
-                            title: "🚀 Marketing: LAPO Loan",
-                            image_url: "رابط_صورة_لابو_هنا.jpg",
-                            subtitle: "بناء علامة تجارية قوية لشركات التمويل.",
-                            buttons: [{ type: "postback", title: "عايز أكبر مشروعي", payload: "START_BOOKING" }]
-                        },
-                        {
-                            title: "🤖 AI Solutions: ELAZ Bots",
-                            image_url: "https://images.unsplash.com/photo-1531746790731-6c087fecd65a?w=500",
-                            subtitle: "بوتات ذكية بتدير شغلك وتبيع للعملاء مكانك.",
-                            buttons: [{ type: "postback", title: "امتلك بوتك الخاص", payload: "START_BOOKING" }]
-                        }
-                    ]
+            attachment: { type: "template", payload: { template_type: "generic", elements } }
+        }
+    });
+}
+
+// ==========================================
+// 🔌 WEBHOOK HANDLERS
+// ==========================================
+app.post('/webhook', async (req, res) => {
+    const body = req.body;
+    if (body.object === 'page') {
+        for (let entry of body.entry) {
+            const webhook_event = entry.messaging[0];
+            const sid = webhook_event.sender.id;
+
+            if (webhook_event.message && webhook_event.message.text) {
+                await handleSalesFunnel(sid, webhook_event.message.text);
+            } else if (webhook_event.postback) {
+                const payload = webhook_event.postback.payload;
+                if (payload === 'BOOK_SERVICE') {
+                    const db = getDB();
+                    db.clients[sid].phase = 'COLLECTING_NAME';
+                    saveDB(db);
+                    await sendFB(sid, { message: { text: "على الرحب والسعة! عشان نقدملك العرض المناسب، ممكن الاسم بالكامل؟" } });
                 }
             }
         }
-    };
-    await fbAPI(data);
-}
-
-// ============================================================
-// 📲 منطق الشغل الصارم (Work Logic)
-// ============================================================
-async function processMessage(sid, text, client) {
-    const db = loadDB();
-    const reply = await elazAI(text, client);
-
-    // التحقق من "النية" قبل الانتقال للخطوات
-    const isBotControl = text.includes("ليه") || text.includes("مين") || text.length < 2;
-
-    if (client.awaitingBooking && !isBotControl) {
-        if (client.step === 1) { client.name = text; client.step = 2; }
-        else if (client.step === 2) { client.details = text; client.step = 3; }
-        else if (client.step === 3 && /[0-9]/.test(text)) {
-            client.phone = text;
-            // حفظ في الشيت
-            if (GOOGLE_SHEET_URL) try { await axios.post(GOOGLE_SHEET_URL, { name: client.name, details: client.details, phone: client.phone }); } catch(e){}
-            client.awaitingBooking = false; client.step = 0;
-            saveDB(db);
-            await fbAPI({ recipient: { id: sid }, message: { text: "عاش يا بطل! بياناتك وصلت للمدير التنفيذي لـ ELAZ. استنى مكالمتنا. ✨" } });
-            await fbAPI({ recipient: { id: sid }, message: { attachment: { type: "template", payload: { template_type: "button", text: "تقدر كمان تبعت استفسارك واتساب مباشرة:", buttons: [{ type: "web_url", title: "واتساب مباشر 🟢", url: MY_WHATSAPP_LINK }] } } } });
-            return;
-        }
-    }
-
-    saveDB(db);
-    await fbAPI({ recipient: { id: sid }, message: { text: reply } });
-    if (!client.awaitingBooking) await sendGlowPortfolio(sid);
-}
-
-// ============================================================
-// 🔗 Webhook & Servers
-// ============================================================
-app.post('/webhook', async (req, res) => {
-    const body = req.body;
-    if (body.object !== 'page') return res.sendStatus(404);
-
-    for (let entry of body.entry) {
-        const msg = entry.messaging[0];
-        if (!msg) continue;
-        const sid = msg.sender.id;
-        const db = loadDB();
-        if (!db.clients[sid]) db.clients[sid] = { sid, step: 0, awaitingBooking: false };
-        const client = db.clients[sid];
-
-        if (msg.message?.text) {
-            await processMessage(sid, msg.message.text, client);
-        } else if (msg.postback?.payload === 'START_BOOKING') {
-            client.awaitingBooking = true; client.step = 1; saveDB(db);
-            await fbAPI({ recipient: { id: sid }, message: { text: "تمام يا فندم، نبدأ بتسجيل طلبك. الاسم بالكامل؟" } });
-        }
-    }
-    res.sendStatus(200);
+        res.status(200).send('EVENT_RECEIVED');
+    } else { res.sendStatus(404); }
 });
 
-app.listen(process.env.PORT || 3000, () => console.log("💎 ELAZ SUPREME AGENT IS ONLINE"));
+app.get('/webhook', (req, res) => {
+    if (req.query['hub.verify_token'] === VERIFY_TOKEN) {
+        res.status(200).send(req.query['hub.challenge']);
+    } else { res.sendStatus(403); }
+});
+
+// --- SERVER START ---
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`🚀 ELAZ SUPREME AGENT DEPLOYED ON PORT ${PORT}`);
+});
